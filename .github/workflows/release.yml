@@ -1,0 +1,112 @@
+name: Release
+
+# Builds the release archive for a version tag and attaches it to the GitHub
+# release of that tag. The executable is signed through SignPath when the
+# repository is set up for it (see "Releasing" in README.md); without that
+# setup the archive holds the unsigned build.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build, for example v0.1.0
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Update Rust
+        run: rustup update stable --no-self-update
+
+      - name: Check that the tag matches Cargo.toml
+        shell: pwsh
+        run: |
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          if ("v$version" -ne $env:TAG) {
+            throw "Tag $env:TAG does not match version $version in Cargo.toml"
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Test
+        run: cargo test
+
+      - name: Build
+        shell: pwsh
+        run: |
+          # Keep build machine paths out of the executable.
+          $env:RUSTFLAGS = @(
+            "--remap-path-prefix=$env:USERPROFILE\.cargo=cargo"
+            "--remap-path-prefix=$env:USERPROFILE\.rustup=rustup"
+            "--remap-path-prefix=$env:GITHUB_WORKSPACE=trayjuice"
+          ) -join ' '
+          cargo build --release
+          New-Item -ItemType Directory -Force unsigned, signed | Out-Null
+          Copy-Item target\release\trayjuice.exe unsigned\
+
+      - name: Upload the unsigned executable
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: trayjuice-unsigned
+          path: unsigned/trayjuice.exe
+          if-no-files-found: error
+
+      - name: Sign with SignPath
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # A release is approved by hand in SignPath. A hosted job may run
+          # for 6 hours at most, so wait up to 5.
+          wait-for-completion-timeout-in-seconds: 18000
+          output-artifact-directory: signed
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          $exe = 'unsigned\trayjuice.exe'
+          if (Test-Path signed\trayjuice.exe) {
+            $exe = 'signed\trayjuice.exe'
+            $signature = Get-AuthenticodeSignature $exe
+            if ($signature.Status -ne 'Valid') {
+              throw "Signature of $exe is $($signature.Status)"
+            }
+          }
+          $dir = "TrayJuice-$env:VERSION"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item $exe, LICENSE, README.md $dir
+          Compress-Archive -Path $dir -DestinationPath "TrayJuice-$env:VERSION-windows-x64.zip"
+
+      - name: Attach to the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "TrayJuice-$env:VERSION-windows-x64.zip"
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG $zip --clobber
+          } else {
+            # A draft: the maintainer writes the notes and publishes it.
+            gh release create $env:TAG $zip --draft --title "TrayJuice $env:VERSION" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh failed" }

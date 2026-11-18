@@ -11,6 +11,10 @@ embedded. The maintainer does not want per-device icons in the tray.
 - `cargo build --release` builds `target\release\trayjuice.exe`.
 - `cargo test` runs the unit tests (curves, report parsing, icon).
 - `cargo fmt` and `cargo clippy --all-targets` must be clean before a commit.
+- `.github/workflows/ci.yml` runs fmt, clippy with warnings as errors, the
+  tests and a release build on every push. `release.yml` builds the archive
+  for a `v*` tag and signs it through SignPath once that is configured (see
+  "Releasing" in `README.md`).
 - `cargo run --example probe` prints HID interfaces and battery readings to
   the console. Add `-- all` to list every vendor, not only Logitech.
 - `cargo run --example widget_preview` writes `widget_preview.bmp`: the

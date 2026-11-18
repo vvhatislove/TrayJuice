@@ -120,6 +120,25 @@ The binary is `target\release\trayjuice.exe`. It has no window and no
 installer: run it and the icon appears. To start it with Windows, put a
 shortcut to it into the folder that `shell:startup` opens.
 
+## Releasing
+
+1. Set the version in `Cargo.toml`, commit and push.
+2. Push a tag of the same version, for example `v0.2.0`.
+3. The `Release` workflow tests, builds and packs
+   `TrayJuice-<version>-windows-x64.zip` and attaches it to the GitHub
+   release of that tag, creating a draft release if there is none yet.
+
+The executable is signed through [SignPath](https://signpath.io) when these
+are set in the repository settings; until then the archive holds the
+unsigned build:
+
+- variables `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG` and
+  `SIGNPATH_SIGNING_POLICY_SLUG`;
+- secret `SIGNPATH_API_TOKEN`.
+
+In SignPath the artifact configuration has to describe a zip file with
+`trayjuice.exe` in it, because that is how GitHub stores the build output.
+
 ## Adding a device
 
 1. Run `cargo run --example probe -- all` to list HID interfaces and see what
