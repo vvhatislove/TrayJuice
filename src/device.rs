@@ -54,6 +54,7 @@ pub fn all_sources() -> Vec<Box<dyn BatterySource>> {
     vec![
         Box::new(crate::logitech::LogitechHeadsets),
         Box::new(crate::delux::DeluxMice::default()),
+        Box::new(crate::xbox::XboxControllers),
     ]
 }
 

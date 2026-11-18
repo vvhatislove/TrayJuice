@@ -42,6 +42,8 @@ Use the `probe` example to debug device communication. Stop a running
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
   Listen-only, in a short window per poll; the last level is remembered.
   The battery stream is switched on by the vendor app, not by us.
+- `src/xbox.rs`: Xbox / XInput gamepads through `XInputGetBatteryInformation`
+  (four coarse levels, nothing for a controller on a cable).
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so

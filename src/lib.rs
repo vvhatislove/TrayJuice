@@ -6,3 +6,4 @@ pub mod icon;
 pub mod log;
 pub mod logitech;
 pub mod taskbar;
+pub mod xbox;

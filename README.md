@@ -46,6 +46,7 @@ Levels refresh once a minute.
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
 | Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | tested, with limits (see below) |
 | Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
+| Xbox controllers and other XInput gamepads | Xbox Wireless Adapter, Bluetooth | untested wirelessly (see below) |
 
 Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve. On a PRO X Wireless it matched G HUB
@@ -62,7 +63,13 @@ nothing to them. What was seen with a Delux M800:
   An earlier build kept it open all the time, and the Delux app then showed
   "No Device" until the receiver was replugged.
 
-Bluetooth devices and other vendors are not supported yet. Adding one means
+Xbox controllers are read through XInput, which only tells four levels. They
+are shown as rough numbers: full 100%, medium 60%, low 25%, empty 5%, with
+the level word in the tooltip. A controller on a USB cable reports no
+battery level and is not shown. So far this was only run with a controller
+on a cable, so the wireless path is untested.
+
+Other Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).
 
 ## Build and run
