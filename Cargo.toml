@@ -1,0 +1,17 @@
+[package]
+name = "trayjuice"
+version = "0.1.0"
+edition = "2024"
+description = "Battery levels of wireless peripherals in the Windows tray"
+authors = ["Vladislav Petrenko"]
+license = "MIT"
+repository = "https://github.com/vvhatislove/TrayJuice"
+readme = "README.md"
+keywords = ["battery", "tray", "windows", "hid", "logitech"]
+categories = ["hardware-support"]
+
+[dependencies]
+hidapi = "2.6.7"
+tray-icon = "0.24.2"
+windows-sys = { version = "0.61.2", features = ["Win32_UI_WindowsAndMessaging"] }
+winit = "0.30.13"
