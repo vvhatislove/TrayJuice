@@ -82,8 +82,8 @@ Use the `probe` example to debug device communication. Stop a running
 - Do not poll more often than once every 30 seconds per device, apart from a
   refresh the user asked for. Polling wakes the radio and drains the battery.
 - Mark a device as "tested" in `README.md` only after running it on real
-  hardware. Verified so far: PRO X Wireless `046d:0aba` and Delux M800 on
-  the `1d57:fa60` receiver.
+  hardware. Verified so far: PRO X Wireless `046d:0aba`, Delux M800 on the
+  `1d57:fa60` receiver, and an Xbox controller on the Xbox Wireless Adapter.
 
 ### Taskbar widget
 
