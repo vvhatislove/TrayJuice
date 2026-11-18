@@ -9,6 +9,23 @@ each device next to the notification area, in the style of the system icons,
 so you never have to open a vendor app to find out whether your headset is
 about to die.
 
+## Install
+
+Download the zip from the
+[latest release](https://github.com/vvhatislove/TrayJuice/releases/latest),
+unpack it anywhere and run `trayjuice.exe`. There is no installer. The
+executable is not signed, so Windows SmartScreen may ask for confirmation on
+the first start.
+
+Or with [Scoop](https://scoop.sh):
+
+```powershell
+scoop bucket add vvhatislove https://github.com/vvhatislove/scoop-bucket
+scoop install trayjuice
+```
+
+Requires Windows 10 or 11.
+
 ## What you see
 
 Each device is a glyph (headset, mouse, keyboard, gamepad) followed by its
@@ -110,17 +127,16 @@ bolt also shows for a controller with AA cells on a cable.
 Other Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).
 
-## Build and run
+## Build from source
 
-Requires Windows 10 or 11 and a [Rust toolchain](https://rustup.rs) (MSVC).
+Requires a [Rust toolchain](https://rustup.rs) (MSVC).
 
 ```
 cargo build --release
 ```
 
-The binary is `target\release\trayjuice.exe`. It has no window and no
-installer: run it and the icon appears. To start it with Windows, put a
-shortcut to it into the folder that `shell:startup` opens.
+The binary is `target\release\trayjuice.exe`. It has no window: run it and
+the icon appears.
 
 ## Releasing
 
@@ -129,6 +145,8 @@ shortcut to it into the folder that `shell:startup` opens.
 3. The `Release` workflow tests, builds and packs
    `TrayJuice-<version>-windows-x64.zip` and attaches it to the GitHub
    release of that tag, creating a draft release if there is none yet.
+4. Publish the draft. The [Scoop bucket](https://github.com/vvhatislove/scoop-bucket)
+   picks the new version up by itself within a few hours.
 
 The executable is signed through [SignPath](https://signpath.io) when these
 are set in the repository settings; until then the archive holds the
