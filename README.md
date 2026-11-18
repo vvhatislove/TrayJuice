@@ -1,23 +1,40 @@
 # TrayJuice
 
-Battery levels of your wireless peripherals, right in the Windows tray.
+Battery levels of your wireless peripherals, right on the Windows taskbar.
 
-TrayJuice is a small Rust app that puts one icon per device next to the clock.
-The icon shows the charge as a number, so you never have to open a vendor app
-to find out whether your headset is about to die.
+TrayJuice is a small Rust app that draws a device glyph and a percentage for
+each device next to the notification area, in the style of the system icons,
+so you never have to open a vendor app to find out whether your headset is
+about to die.
 
-## What the icon means
+## What you see
 
-| Icon | Meaning |
-|---|---|
-| green tile | more than 50% |
-| amber tile | 21–50% |
-| red tile | 20% or less |
-| blue tile | charging |
-| grey tile with `--` | receiver is plugged in, device is off or out of range |
+Each device is a glyph (headset, mouse, keyboard, gamepad) followed by its
+level, for example `30%`. The text follows the taskbar theme and turns red at
+20% or less, green while charging, and dims to a dash when the receiver is
+plugged in but the device is off or out of range.
 
-Hover the icon for the device name and exact level. Right-click for
-**Refresh now** and **Quit TrayJuice**. Levels refresh once a minute.
+A TrayJuice icon in the tray shows all levels on hover. Right-click it for:
+
+- **Show in taskbar**: turn the taskbar widget on or off. When it is off,
+  every device gets its own tray icon with the level as a number on a
+  coloured tile (green above 50%, amber 21–50%, red 20% or less, blue while
+  charging, grey when off).
+- **Refresh now** and **Quit TrayJuice**.
+
+Levels refresh once a minute.
+
+## Known limitations
+
+- The taskbar widget relies on embedding a window into the taskbar, which
+  Windows has no public API for. It was built on Windows 11 build 26200 at
+  100% scaling and may stop working after a Windows update; the tray tiles
+  keep working in that case.
+- With many open apps the widget can overlap taskbar buttons next to the
+  notification area.
+- Other display scales, the light theme, vertical or secondary taskbars and
+  Windows 10 are untested.
+- The "Show in taskbar" choice is not saved between runs.
 
 ## Supported devices
 
@@ -48,14 +65,15 @@ shortcut to it into the folder that `shell:startup` opens.
 
 1. Run `cargo run --example probe -- all` to list HID interfaces and see what
    the existing backends report.
-2. Implement `BatterySource` (see `src/device.rs`) in a new module. Use
-   `src/logitech.rs` as a reference.
+2. Implement `BatterySource` (see `src/device.rs`) in a new module and set
+   the right `DeviceKind`. Use `src/logitech.rs` as a reference.
 3. Register it in `all_sources()`.
 4. Add the device to the table above, marked as tested only if you ran it on
    real hardware.
 
-`cargo run --example icon_preview` writes `icon_preview.bmp` with the icons
-for a range of states, which helps when changing the rendering.
+`cargo run --example widget_preview` and `cargo run --example icon_preview`
+write BMP images of the taskbar widget and the tray tiles for a range of
+states, which helps when changing the rendering.
 
 ## Credits
 

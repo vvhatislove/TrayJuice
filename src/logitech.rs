@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use hidapi::{HidApi, HidDevice};
 
-use crate::device::{percent_from_voltage, BatterySource, BatteryState, DeviceStatus};
+use crate::device::{BatterySource, BatteryState, DeviceKind, DeviceStatus, percent_from_voltage};
 
 const VENDOR_LOGITECH: u16 = 0x046d;
 
@@ -81,6 +81,7 @@ impl BatterySource for LogitechHeadsets {
                 .unwrap_or(BatteryState::Offline);
             out.push(DeviceStatus {
                 name: model.name.to_string(),
+                kind: DeviceKind::Headset,
                 state,
             });
         }

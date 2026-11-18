@@ -5,10 +5,11 @@ use std::thread;
 use std::time::Duration;
 
 use hidapi::HidApi;
-use tray_icon::menu::{Menu, MenuEvent, MenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
-use trayjuice::device::{all_sources, BatteryState, DeviceStatus};
+use trayjuice::device::{BatteryState, DeviceKind, DeviceStatus, all_sources};
 use trayjuice::icon;
+use trayjuice::taskbar::Widget;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -18,6 +19,7 @@ use winit::window::WindowId;
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const MENU_REFRESH: &str = "refresh";
 const MENU_QUIT: &str = "quit";
+const MENU_WIDGET: &str = "widget";
 
 enum UserEvent {
     Statuses(Vec<DeviceStatus>),
@@ -25,24 +27,65 @@ enum UserEvent {
 }
 
 struct App {
-    /// One tray icon per device, in the order the poller reports them.
+    /// Tile mode: one tray icon per device, in the order the poller reports them.
     icons: Vec<(DeviceStatus, TrayIcon)>,
+    /// Widget mode: a single tray icon that carries the menu and the tooltip.
+    app_icon: Option<TrayIcon>,
+    widget: Widget,
+    widget_item: CheckMenuItem,
+    /// Latest poll result, kept so the display can be rebuilt on a mode switch.
+    statuses: Vec<DeviceStatus>,
     menu: Menu,
     icon_size: usize,
     refresh: mpsc::Sender<()>,
 }
 
 impl App {
-    fn show(&mut self, mut statuses: Vec<DeviceStatus>) {
+    fn show(&mut self) {
+        let wanted = self.widget_item.is_checked();
+        if wanted && !self.statuses.is_empty() && self.widget.update(&self.statuses) {
+            self.icons.clear();
+            self.show_app_icon();
+        } else {
+            self.widget.hide();
+            self.app_icon = None;
+            self.show_tiles();
+        }
+    }
+
+    fn show_app_icon(&mut self) {
+        let tooltip = self.statuses.iter().map(tooltip).collect::<Vec<_>>().join(
+            "
+",
+        );
+        match &self.app_icon {
+            Some(tray) => {
+                let _ = tray.set_tooltip(Some(tooltip));
+            }
+            None => {
+                let size = self.icon_size;
+                let image = Icon::from_rgba(icon::app_icon(size), size as u32, size as u32)
+                    .expect("icon buffer has the right size");
+                self.app_icon = Some(self.build_tray(image, tooltip));
+            }
+        }
+    }
+
+    fn show_tiles(&mut self) {
+        let mut statuses = self.statuses.clone();
         if statuses.is_empty() {
             statuses.push(DeviceStatus {
                 name: "No supported devices".into(),
+                kind: DeviceKind::Other,
                 state: BatteryState::Offline,
             });
         }
         // Tray icons cannot be reordered, so rebuild when the device set changes.
         let same_devices = statuses.len() == self.icons.len()
-            && statuses.iter().zip(&self.icons).all(|(s, (old, _))| s.name == old.name);
+            && statuses
+                .iter()
+                .zip(&self.icons)
+                .all(|(s, (old, _))| s.name == old.name);
         if !same_devices {
             self.icons.clear();
         }
@@ -58,16 +101,20 @@ impl App {
                     }
                 }
                 None => {
-                    let tray = TrayIconBuilder::new()
-                        .with_icon(image)
-                        .with_tooltip(tooltip)
-                        .with_menu(Box::new(self.menu.clone()))
-                        .build()
-                        .expect("failed to create tray icon");
+                    let tray = self.build_tray(image, tooltip);
                     self.icons.push((status, tray));
                 }
             }
         }
+    }
+
+    fn build_tray(&self, image: Icon, tooltip: String) -> TrayIcon {
+        TrayIconBuilder::new()
+            .with_icon(image)
+            .with_tooltip(tooltip)
+            .with_menu(Box::new(self.menu.clone()))
+            .build()
+            .expect("failed to create tray icon")
     }
 
     fn image(&self, state: &BatteryState) -> Icon {
@@ -79,7 +126,10 @@ impl App {
 
 fn tooltip(status: &DeviceStatus) -> String {
     match status.state {
-        BatteryState::Level { percent, charging: true } => {
+        BatteryState::Level {
+            percent,
+            charging: true,
+        } => {
             format!("{}: {percent}% (charging)", status.name)
         }
         BatteryState::Level { percent, .. } => format!("{}: {percent}%", status.name),
@@ -94,9 +144,16 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::Statuses(statuses) => self.show(statuses),
+            UserEvent::Statuses(statuses) => {
+                self.statuses = statuses;
+                self.show();
+            }
+            // The check mark has already been toggled by the menu itself.
+            UserEvent::Menu(e) if e.id.as_ref() == MENU_WIDGET => self.show(),
             UserEvent::Menu(e) if e.id.as_ref() == MENU_QUIT => {
                 self.icons.clear();
+                self.app_icon = None;
+                self.widget.hide();
                 event_loop.exit();
             }
             UserEvent::Menu(e) if e.id.as_ref() == MENU_REFRESH => {
@@ -142,8 +199,10 @@ fn main() {
         let _ = menu_proxy.send_event(UserEvent::Menu(e));
     }));
 
+    let widget_item = CheckMenuItem::with_id(MENU_WIDGET, "Show in taskbar", true, true, None);
     let menu = Menu::new();
     menu.append_items(&[
+        &widget_item,
         &MenuItem::with_id(MENU_REFRESH, "Refresh now", true, None),
         &MenuItem::with_id(MENU_QUIT, "Quit TrayJuice", true, None),
     ])
@@ -158,6 +217,10 @@ fn main() {
 
     let mut app = App {
         icons: Vec::new(),
+        app_icon: None,
+        widget: Widget::new(),
+        widget_item,
+        statuses: Vec::new(),
         menu,
         icon_size,
         refresh: refresh_tx,

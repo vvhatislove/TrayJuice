@@ -11,9 +11,20 @@ pub enum BatteryState {
     Offline,
 }
 
+/// What the device is; picks the glyph shown next to the percentage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceKind {
+    Headset,
+    Mouse,
+    Keyboard,
+    Gamepad,
+    Other,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceStatus {
     pub name: String,
+    pub kind: DeviceKind,
     pub state: BatteryState,
 }
 

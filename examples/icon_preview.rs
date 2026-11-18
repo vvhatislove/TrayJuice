@@ -10,9 +10,15 @@ const PAD: usize = 4;
 fn main() {
     let states: Vec<BatteryState> = [100, 87, 64, 35, 16, 9, 0]
         .into_iter()
-        .map(|percent| BatteryState::Level { percent, charging: false })
+        .map(|percent| BatteryState::Level {
+            percent,
+            charging: false,
+        })
         .chain([
-            BatteryState::Level { percent: 42, charging: true },
+            BatteryState::Level {
+                percent: 42,
+                charging: true,
+            },
             BatteryState::Offline,
         ])
         .collect();

@@ -102,6 +102,31 @@ pub fn render(state: &BatteryState, size: usize) -> Vec<u8> {
     px
 }
 
+/// Generic app icon (a battery on a green tile), used for the single tray
+/// icon while the taskbar widget shows the per-device levels.
+pub fn app_icon(size: usize) -> Vec<u8> {
+    let mut px = vec![0u8; size * size * 4];
+    let radius = (size / 8).max(1);
+    // Battery drawn on a 16x16 grid: body outline, charge fill, terminal nub.
+    let on_battery = |gx: usize, gy: usize| {
+        let body = (2..=12).contains(&gx) && (5..=10).contains(&gy);
+        let hollow = (3..=11).contains(&gx) && (6..=9).contains(&gy);
+        let fill = (4..=8).contains(&gx) && (7..=8).contains(&gy);
+        let nub = gx == 13 && (7..=8).contains(&gy);
+        (body && !hollow) || fill || nub
+    };
+    for y in 0..size {
+        for x in 0..size {
+            if !in_rounded_square(x, y, size, radius) {
+                continue;
+            }
+            let white = on_battery(x * 16 / size, y * 16 / size);
+            put(&mut px, size, x, y, if white { WHITE } else { GREEN });
+        }
+    }
+    px
+}
+
 fn put(px: &mut [u8], size: usize, x: usize, y: usize, rgb: [u8; 3]) {
     let i = (y * size + x) * 4;
     px[i..i + 3].copy_from_slice(&rgb);
@@ -110,8 +135,20 @@ fn put(px: &mut [u8], size: usize, x: usize, y: usize, rgb: [u8; 3]) {
 
 fn in_rounded_square(x: usize, y: usize, size: usize, r: usize) -> bool {
     let edge = size - 1;
-    let cx = if x < r { r } else if x > edge - r { edge - r } else { return true };
-    let cy = if y < r { r } else if y > edge - r { edge - r } else { return true };
+    let cx = if x < r {
+        r
+    } else if x > edge - r {
+        edge - r
+    } else {
+        return true;
+    };
+    let cy = if y < r {
+        r
+    } else if y > edge - r {
+        edge - r
+    } else {
+        return true;
+    };
     let (dx, dy) = (x.abs_diff(cx), y.abs_diff(cy));
     dx * dx + dy * dy <= r * r
 }
@@ -124,7 +161,10 @@ mod tests {
     fn renders_every_level_at_common_sizes() {
         for size in [16, 20, 24, 32, 48] {
             for percent in 0..=100 {
-                let state = BatteryState::Level { percent, charging: false };
+                let state = BatteryState::Level {
+                    percent,
+                    charging: false,
+                };
                 assert_eq!(render(&state, size).len(), size * size * 4);
             }
             render(&BatteryState::Offline, size);
