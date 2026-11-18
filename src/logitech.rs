@@ -4,6 +4,14 @@
 //! follow the HeadsetControl project: <https://github.com/Sapd/HeadsetControl>
 //! (`src/devices/logitech_gpro.c` in release 3.0.0 for the polynomial).
 //!
+//! The battery tables of the PRO X Wireless `046d:0aba` are reduced from the
+//! power model G HUB installs for that headset
+//! (`pro_headset\pro_x_wireless_headset_battery.xml` under
+//! `%ProgramData%\LGHUB\depots`: a discharge curve and a two-stage charging
+//! curve). With them the level agrees with G HUB within a point, on and off
+//! the charger. The polynomial is up to 12 points lower than that model
+//! between 3750 and 3900 mV.
+//!
 //! Observed on a PRO X Wireless (`046d:0aba`), not taken from a source:
 //!
 //! - The headset announces a change of its charge state by itself. Pulling
@@ -15,9 +23,9 @@
 //!   other models send them is not known; without them the regular poll
 //!   still works.
 //! - On the charger the reported voltage is that under charge current, far
-//!   above the resting value: 3658 mV (21 %) became 3978 mV a minute after
-//!   plugging in. The discharge polynomial reads that as 87 %, so charging
-//!   uses its own table, see [`CHARGE_CURVE`].
+//!   above the resting value: 3658 mV became 3978 mV a minute after plugging
+//!   in. A discharge curve reads that far too high, so charging needs its
+//!   own curve; a model without one shows no number while it charges.
 //! - Only charge states `01` (discharging) and `03` (charging) were seen.
 //!   What a full headset on the charger reports is not known.
 
@@ -31,7 +39,8 @@ use std::time::{Duration, Instant};
 use hidapi::{HidApi, HidDevice};
 
 use crate::device::{
-    BatterySource, BatteryState, DeviceKind, DeviceStatus, Waker, percent_from_voltage,
+    BatterySource, BatteryState, DeviceKind, DeviceStatus, Waker, percent_from_table,
+    percent_from_voltage,
 };
 
 const VENDOR_LOGITECH: u16 = 0x046d;
@@ -54,6 +63,22 @@ const MIN_REQUEST_GAP: Duration = Duration::from_secs(30);
 /// one poll per burst is enough.
 const EVENT_QUIET: Duration = Duration::from_secs(5);
 
+/// How a voltage read off the charger becomes a level.
+enum Discharge {
+    /// See [`percent_from_voltage`].
+    Polynomial(&'static [f64]),
+    /// See [`percent_from_table`].
+    Table(&'static [(u16, f32)]),
+}
+
+/// How a voltage read on the charger becomes a level. Charging has two
+/// stages: the voltage rises to the last point of `rising`, then falls
+/// slowly along `topping` while the battery is topped up.
+struct Charge {
+    rising: &'static [(u16, f32)],
+    topping: &'static [(u16, f32)],
+}
+
 struct Model {
     product_id: u16,
     name: &'static str,
@@ -61,14 +86,15 @@ struct Model {
     usage: u16,
     /// Feature index + function of the "battery voltage" request.
     battery_cmd: [u8; 2],
-    /// Discharge polynomial, see [`percent_from_voltage`].
-    curve: &'static [f64],
+    discharge: Discharge,
+    /// `None` when nothing is known about this model on the charger.
+    charge: Option<Charge>,
     /// Readings below this are a headset that is off, not an empty battery.
     min_mv: u16,
 }
 
-/// Fitted to the G PRO series by HeadsetControl. Checked against G HUB on a
-/// PRO X Wireless: 3692 mV gives 27 %, the same number G HUB showed.
+/// Fitted to the G PRO series by HeadsetControl. Used for the models whose
+/// own curve is not known.
 const GPRO_CURVE: &[f64] = &[
     -1.779_008_582_425_361_3e6,
     2.369_215_330_734_489e3,
@@ -79,37 +105,51 @@ const GPRO_CURVE: &[f64] = &[
 ];
 const GPRO_MIN_MV: u16 = 3300;
 
-/// Voltage on the charger (mV) to percent. An estimate from two charges of
-/// one PRO X Wireless, scaled to what G HUB shows:
-///
-/// - Up to 4183 mV: a charge logged from 21 % to 71 % in 70 minutes (71 % is
-///   what the discharge polynomial said right after unplugging). The
-///   voltages are the logged ones; the percentages assume the level rose
-///   evenly in between.
-/// - The last two points are G HUB's own numbers, read from its settings
-///   database during a second charge (4233 mV: 81.8 %, 4237 mV: 82.4 %).
-///   Unplugged at 4240 mV, the headset read 3932 mV (79 %) three minutes
-///   later.
-///
-/// Outside the table the nearest segment is extended; nothing was measured
-/// below 21 % or above 82 %.
-const CHARGE_CURVE: &[(u16, u8)] = &[
-    (3978, 21),
-    (4013, 25),
-    (4049, 30),
-    (4074, 36),
-    (4102, 47),
-    (4134, 59),
-    (4156, 65),
-    (4183, 71),
-    (4237, 82),
+/// PRO X Wireless `0aba`, off the charger: millivolts to percent. Reduced
+/// from G HUB's discharge curve to the points that keep it within 0.6 of a
+/// point.
+const PRO_X_DISCHARGE: &[(u16, f32)] = &[
+    (3293, 0.0),
+    (3533, 9.3),
+    (3644, 15.0),
+    (3653, 16.7),
+    (3664, 20.8),
+    (3681, 23.7),
+    (3708, 30.4),
+    (3734, 39.1),
+    (3757, 49.4),
+    (3773, 55.4),
+    (3796, 61.9),
+    (3820, 67.1),
+    (3975, 88.2),
+    (4102, 100.0),
 ];
-/// The headset still says "charging", so do not claim it is full.
-const CHARGE_MAX_PERCENT: u8 = 99;
-/// After unplugging, the voltage needs a while to fall back to its resting
-/// value (4219 mV, which reads as 100 %, in the first second). For this long
-/// the level is not allowed above the last estimate made on the charger.
-const SETTLE: Duration = Duration::from_secs(20 * 60);
+/// PRO X Wireless `0aba` on the charger while the voltage rises, reduced the
+/// same way from G HUB's charging curve.
+const PRO_X_CHARGE_RISING: &[(u16, f32)] = &[
+    (3444, 0.2),
+    (3749, 2.1),
+    (3874, 4.4),
+    (3921, 6.4),
+    (4008, 21.6),
+    (4020, 25.5),
+    (4044, 38.2),
+    (4061, 44.9),
+    (4087, 52.8),
+    (4123, 61.7),
+    (4154, 68.2),
+    (4202, 76.7),
+    (4238, 82.4),
+    (4275, 86.9),
+];
+/// The second stage: the voltage falls from 4273 mV while the level goes
+/// from 87 % to full.
+const PRO_X_CHARGE_TOPPING: &[(u16, f32)] =
+    &[(4206, 99.9), (4241, 93.0), (4242, 92.1), (4273, 87.2)];
+/// After unplugging, the voltage needs a moment to fall back (4219 mV in
+/// the first second, 3937 mV a minute later). For this long the level is not
+/// allowed above the last estimate made on the charger.
+const SETTLE: Duration = Duration::from_secs(120);
 
 const fn gpro(product_id: u16, name: &'static str) -> Model {
     Model {
@@ -118,7 +158,8 @@ const fn gpro(product_id: u16, name: &'static str) -> Model {
         usage_page: 0xff43,
         usage: 0x0202,
         battery_cmd: [0x06, 0x0d],
-        curve: GPRO_CURVE,
+        discharge: Discharge::Polynomial(GPRO_CURVE),
+        charge: None,
         min_mv: GPRO_MIN_MV,
     }
 }
@@ -126,7 +167,14 @@ const fn gpro(product_id: u16, name: &'static str) -> Model {
 const MODELS: &[Model] = &[
     gpro(0x0aa7, "Logitech G PRO Wireless Headset"),
     gpro(0x0aaa, "Logitech PRO X Wireless"),
-    gpro(0x0aba, "Logitech PRO X Wireless"),
+    Model {
+        discharge: Discharge::Table(PRO_X_DISCHARGE),
+        charge: Some(Charge {
+            rising: PRO_X_CHARGE_RISING,
+            topping: PRO_X_CHARGE_TOPPING,
+        }),
+        ..gpro(0x0aba, "Logitech PRO X Wireless")
+    },
     gpro(0x0afb, "Logitech PRO X 2"),
     gpro(0x0afc, "Logitech PRO X 2"),
 ];
@@ -139,6 +187,9 @@ struct Memory {
     discharging: Option<u8>,
     /// Last estimate made on the charger, and when.
     charging: Option<(u8, Instant)>,
+    /// The voltage has reached the top of the rising stage during this
+    /// charge, so it is read along the topping stage from now on.
+    topping: bool,
 }
 
 /// One open receiver whose thread waits for reports the headset sends by itself.
@@ -307,20 +358,6 @@ fn read_battery(dev: &HidDevice, model: &Model) -> Option<(u16, u8)> {
     }
 }
 
-/// Percent for a voltage read on the charger, from [`CHARGE_CURVE`].
-fn percent_on_charger(mv: u16) -> u8 {
-    let curve = CHARGE_CURVE;
-    // The segment that holds `mv`; the outer ones also serve what lies beyond.
-    let i = curve[1..curve.len() - 1]
-        .iter()
-        .take_while(|p| p.0 <= mv)
-        .count();
-    let ((v0, p0), (v1, p1)) = (curve[i], curve[i + 1]);
-    let slope = (p1 as f64 - p0 as f64) / (v1 as f64 - v0 as f64);
-    let percent = p0 as f64 + (mv as f64 - v0 as f64) * slope;
-    percent.round().clamp(0.0, CHARGE_MAX_PERCENT as f64) as u8
-}
-
 /// Turns the voltage and charge state of a reply into a battery state.
 fn state_from_reply(
     model: &Model,
@@ -333,24 +370,40 @@ fn state_from_reply(
         return None;
     }
     if state != STATE_CHARGING {
-        let mut percent = percent_from_voltage(model.curve, mv);
+        let mut percent = match model.discharge {
+            Discharge::Polynomial(terms) => percent_from_voltage(terms, mv),
+            Discharge::Table(points) => percent_from_table(points, mv),
+        };
         match memory.charging {
             Some((cap, since)) if now.duration_since(since) < SETTLE => percent = percent.min(cap),
             _ => memory.charging = None,
         }
         memory.discharging = Some(percent);
+        memory.topping = false;
         return Some(BatteryState::Level {
             percent,
             charging: false,
         });
     }
 
+    let Some(charge) = &model.charge else {
+        return Some(BatteryState::Charging);
+    };
+    // Which stage a voltage belongs to cannot be told from one reading: it
+    // is known only after the top of the rising stage was seen. A charge
+    // that was already topping up when the app started reads too low.
+    let (top_mv, _) = charge.rising[charge.rising.len() - 1];
+    memory.topping |= mv >= top_mv;
+    let estimate = if memory.topping {
+        percent_from_table(charge.topping, mv)
+    } else {
+        percent_from_table(charge.rising, mv)
+    };
     // For the first minute on the charger the voltage is still climbing
     // (3910 mV at the moment of plugging in, 4140 mV a minute later), and a
     // battery on the charger does not lose charge: never go below the level
     // it had before.
-    let floor = memory.discharging.unwrap_or(0);
-    let percent = percent_on_charger(mv).max(floor).min(CHARGE_MAX_PERCENT);
+    let percent = estimate.max(memory.discharging.unwrap_or(0));
     memory.charging = Some((percent, now));
     Some(BatteryState::Level {
         percent,
@@ -374,39 +427,78 @@ mod tests {
         assert_eq!(percent_from_voltage(GPRO_CURVE, 3300), 0);
     }
 
-    #[test]
-    fn charge_curve_interpolates_and_stays_in_range() {
-        assert_eq!(percent_on_charger(3978), 21);
-        assert_eq!(percent_on_charger(4118), 53);
-        assert_eq!(percent_on_charger(4233), 81);
-        assert_eq!(percent_on_charger(4237), 82);
-        // Beyond the table the outer segments are extended.
-        assert_eq!(percent_on_charger(3943), 17);
-        assert_eq!(percent_on_charger(4262), 87);
-        assert_eq!(percent_on_charger(3400), 0);
-        assert_eq!(percent_on_charger(4500), 99);
+    /// The PRO X Wireless with its own tables.
+    fn pro_x() -> &'static Model {
+        MODELS.iter().find(|m| m.product_id == 0x0aba).unwrap()
     }
 
     #[test]
-    fn follows_a_logged_charge() {
-        let model = &MODELS[0];
+    fn matches_what_g_hub_showed() {
+        // Pairs of voltage and level read from G HUB's settings database.
+        let now = Instant::now();
+        let mut memory = Memory::default();
+        let mut at = |mv| state_from_reply(pro_x(), mv, 0x01, &mut memory, now);
+        assert_eq!(at(3930), level(82, false));
+        assert_eq!(at(3692), level(26, false));
+        let mut memory = Memory::default();
+        let mut at = |mv| state_from_reply(pro_x(), mv, 0x03, &mut memory, now);
+        assert_eq!(at(4233), level(82, true));
+        assert_eq!(at(4249), level(84, true));
+        assert_eq!(at(4260), level(85, true));
+    }
+
+    #[test]
+    fn follows_a_charge_through_both_stages() {
         let mut memory = Memory::default();
         let start = Instant::now();
         let mut at = |secs: u64, mv, state| {
             let now = start + Duration::from_secs(secs);
-            state_from_reply(model, mv, state, &mut memory, now)
+            state_from_reply(pro_x(), mv, state, &mut memory, now)
         };
-        assert_eq!(at(0, 3658, 0x01), level(21, false));
+        assert_eq!(at(0, 3658, 0x01), level(19, false));
         // Just plugged in: the voltage has not climbed yet, keep the old level.
-        assert_eq!(at(60, 3910, 0x03), level(21, true));
-        assert_eq!(at(120, 3978, 0x03), level(21, true));
-        assert_eq!(at(4200, 4183, 0x03), level(71, true));
-        assert_eq!(at(5000, 4240, 0x03), level(83, true));
-        // Unplugged: the polynomial says 100 % until the voltage drops.
-        assert_eq!(at(5007, 4240, 0x01), level(83, false));
-        assert_eq!(at(5200, 3932, 0x01), level(79, false));
-        // Cable back in while the voltage is low again: keep the level.
-        assert_eq!(at(5210, 3941, 0x03), level(79, true));
+        assert_eq!(at(60, 3910, 0x03), level(19, true));
+        assert_eq!(at(1200, 4087, 0x03), level(53, true));
+        assert_eq!(at(4200, 4238, 0x03), level(82, true));
+        // The top of the rising stage; from here the voltage falls.
+        assert_eq!(at(6000, 4275, 0x03), level(87, true));
+        assert_eq!(at(7000, 4241, 0x03), level(93, true));
+        assert_eq!(at(9000, 4206, 0x03), level(100, true));
+        // Unplugged: the voltage is still high for a moment.
+        assert_eq!(at(9005, 4200, 0x01), level(100, false));
+        // The next charge starts in the rising stage again.
+        assert_eq!(at(20000, 3930, 0x01), level(82, false));
+        assert_eq!(at(20100, 4238, 0x03), level(82, true));
+    }
+
+    #[test]
+    fn unplugging_does_not_raise_the_level() {
+        let mut memory = Memory::default();
+        let start = Instant::now();
+        let mut at = |secs: u64, mv, state| {
+            let now = start + Duration::from_secs(secs);
+            state_from_reply(pro_x(), mv, state, &mut memory, now)
+        };
+        assert_eq!(at(0, 4202, 0x03), level(77, true));
+        // A second after the cable is pulled the voltage has barely moved.
+        assert_eq!(at(1, 4200, 0x01), level(77, false));
+        // Later the reading stands on its own.
+        assert_eq!(at(600, 3975, 0x01), level(88, false));
+    }
+
+    #[test]
+    fn a_model_without_a_charging_curve_shows_no_number() {
+        let model = &MODELS[0];
+        let mut memory = Memory::default();
+        let now = Instant::now();
+        assert_eq!(
+            state_from_reply(model, 3692, 0x01, &mut memory, now),
+            level(27, false)
+        );
+        assert_eq!(
+            state_from_reply(model, 3978, 0x03, &mut memory, now),
+            Some(BatteryState::Charging)
+        );
     }
 
     #[test]

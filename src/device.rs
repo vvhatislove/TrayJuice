@@ -76,9 +76,46 @@ pub fn percent_from_voltage(terms: &[f64], mv: u16) -> u8 {
     percent.round().clamp(0.0, 100.0) as u8
 }
 
+/// Reads a percentage off a table of `(millivolts, percent)` points sorted
+/// by voltage, with straight lines between them. Outside the table the
+/// nearest end applies. The result is rounded and clamped to 0..=100.
+pub fn percent_from_table(points: &[(u16, f32)], mv: u16) -> u8 {
+    let Some(&(_, mut percent)) = points.first() else {
+        return 0;
+    };
+    for pair in points.windows(2) {
+        let ((v0, p0), (v1, p1)) = (pair[0], pair[1]);
+        if mv <= v0 {
+            break;
+        }
+        percent = if mv >= v1 {
+            p1
+        } else {
+            p0 + (p1 - p0) * (mv - v0) as f32 / (v1 - v0) as f32
+        };
+    }
+    percent.round().clamp(0.0, 100.0) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_tables_in_both_directions() {
+        let rising = [(3000, 0.0), (3500, 50.0), (4000, 100.0)];
+        assert_eq!(percent_from_table(&rising, 2000), 0);
+        assert_eq!(percent_from_table(&rising, 3250), 25);
+        assert_eq!(percent_from_table(&rising, 3500), 50);
+        assert_eq!(percent_from_table(&rising, 3900), 90);
+        assert_eq!(percent_from_table(&rising, 4500), 100);
+        // A level that falls as the voltage rises works the same way.
+        let falling = [(4200, 100.0), (4280, 80.0)];
+        assert_eq!(percent_from_table(&falling, 4100), 100);
+        assert_eq!(percent_from_table(&falling, 4240), 90);
+        assert_eq!(percent_from_table(&falling, 4300), 80);
+        assert_eq!(percent_from_table(&[], 4000), 0);
+    }
 
     #[test]
     fn evaluates_and_clamps() {

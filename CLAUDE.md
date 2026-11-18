@@ -40,7 +40,8 @@ Use the `probe` example to debug device communication. Stop a running
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver. A
   listener thread per receiver waits for the report the headset sends when
   its charging cable changes and asks for a poll. On the charger the level
-  comes from a separate measured table, not from the discharge polynomial.
+  comes from a separate charging curve, not from the discharge one. The
+  `0aba` curves are reduced from the power model G HUB installs.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
   Listen-only. A listener thread keeps its handle open while the receiver
   is plugged in, because the battery reports stop for good once nothing

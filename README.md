@@ -38,9 +38,9 @@ disappears or reports a change by itself.
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.
 - The "Show in taskbar" choice is not saved between runs.
-- The level of a Logitech headset on the charger is a rough estimate (see
-  "Supported devices"), measured between 21% and 82% only. It stops at 99%
-  while the headset says it is charging.
+- A PRO X Wireless that was already past about 87% on the charger when
+  TrayJuice started reads too low until it is unplugged (see "Supported
+  devices"). The other Logitech models show no number while charging.
 
 ## Supported devices
 
@@ -53,19 +53,23 @@ disappears or reports a change by itself.
 | Xbox controllers and other XInput gamepads | Xbox Wireless Adapter | tested, four rough levels (see below) |
 | Xbox controllers and other XInput gamepads | Bluetooth | same API, untested |
 
-Logitech headsets report battery voltage, not a percentage, so the number is
-an estimate from a discharge curve. On a PRO X Wireless it matched G HUB
-exactly at the one point compared (27%).
+Logitech headsets report battery voltage, not a percentage, so the number
+comes from a curve.
 
-On the charger the headset reports a voltage about 0.3 V above the resting
-value, which the discharge curve would turn into a level far too high (21%
-read as 87% on a PRO X Wireless). Charging therefore uses a separate table,
-measured on one PRO X Wireless over two charges between 21% and 82% and
-scaled to what G HUB showed (82% in G HUB against 79% by the discharge curve
-three minutes after unplugging). Below and above that range the table is
-extended in a straight line. For 20 minutes after unplugging the level is
-not allowed above the last estimate made on the charger, because the voltage
-takes a moment to drop.
+For the PRO X Wireless `046d:0aba` the curves are reduced from the power
+model G HUB installs for that headset: one for discharging and a two-stage
+one for charging. With them TrayJuice and G HUB agreed within a point at
+every level compared (26%, 82% off the charger; 82% to 85% on it). Charging
+has a catch: past about 87% the voltage falls again while the battery is
+topped up, so the same voltage means two different levels. TrayJuice tells
+them apart only if it saw the charge reach that point. For two minutes after
+unplugging the level is not allowed above the last one shown on the charger,
+because the voltage takes a moment to drop.
+
+The other Logitech models use a polynomial from HeadsetControl. Against the
+PRO X Wireless model it is up to 12 points low between 3.75 V and 3.9 V, so
+expect a similar error there. They have no charging curve and show a
+lightning bolt instead of a number on the charger.
 
 The PRO X Wireless announces by itself when the charging cable is plugged in
 or pulled, and TrayJuice listens for that, so the widget follows the cable
@@ -129,6 +133,8 @@ for a range of states, which helps when changing the rendering.
 Protocol facts come from other open projects; no code was copied from them.
 
 - Logitech headsets: [HeadsetControl](https://github.com/Sapd/HeadsetControl).
+  The battery curves of the PRO X Wireless are a reduction of the power
+  model shipped with Logitech G HUB.
 - Delux and Attack Shark mice:
   [OpenMouse mouse-protocol](https://github.com/OpenMouse-Project/mouse-protocol)
   and [mouse-battery-tray](https://github.com/incconutwo/mouse-battery-tray).
