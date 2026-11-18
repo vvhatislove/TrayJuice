@@ -57,37 +57,26 @@ pub fn all_sources() -> Vec<Box<dyn BatterySource>> {
     ]
 }
 
-/// Piecewise-linear interpolation over a discharge curve.
-/// `curve` is `(millivolts, percent)` sorted by descending voltage.
-pub fn percent_from_voltage(curve: &[(u16, u8)], mv: u16) -> u8 {
-    let (top_mv, top_pct) = curve[0];
-    if mv >= top_mv {
-        return top_pct;
-    }
-    for pair in curve.windows(2) {
-        let (hi_mv, hi_pct) = pair[0];
-        let (lo_mv, lo_pct) = pair[1];
-        if mv >= lo_mv {
-            let span = (hi_mv - lo_mv) as f32;
-            let t = (mv - lo_mv) as f32 / span;
-            return (lo_pct as f32 + t * (hi_pct - lo_pct) as f32).round() as u8;
-        }
-    }
-    curve[curve.len() - 1].1
+/// Evaluates a discharge polynomial: `terms[i]` multiplies `mv^i`.
+/// The result is rounded and clamped to 0..=100.
+pub fn percent_from_voltage(terms: &[f64], mv: u16) -> u8 {
+    let v = mv as f64;
+    // Horner's scheme, highest power first.
+    let percent = terms.iter().rev().fold(0.0, |acc, term| acc * v + term);
+    percent.round().clamp(0.0, 100.0) as u8
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const CURVE: &[(u16, u8)] = &[(4150, 100), (3830, 50), (3320, 0)];
-
     #[test]
-    fn clamps_and_interpolates() {
-        assert_eq!(percent_from_voltage(CURVE, 4300), 100);
-        assert_eq!(percent_from_voltage(CURVE, 4150), 100);
-        assert_eq!(percent_from_voltage(CURVE, 3990), 75);
-        assert_eq!(percent_from_voltage(CURVE, 3830), 50);
-        assert_eq!(percent_from_voltage(CURVE, 3000), 0);
+    fn evaluates_and_clamps() {
+        // percent = mv / 10 - 300
+        let line = [-300.0, 0.1];
+        assert_eq!(percent_from_voltage(&line, 3500), 50);
+        assert_eq!(percent_from_voltage(&line, 3754), 75);
+        assert_eq!(percent_from_voltage(&line, 2000), 0);
+        assert_eq!(percent_from_voltage(&line, 4500), 100);
     }
 }

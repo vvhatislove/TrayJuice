@@ -48,7 +48,8 @@ Levels refresh once a minute.
 | Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
 
 Logitech headsets report battery voltage, not a percentage, so the number is
-an estimate from a discharge curve and can differ from G HUB by a few percent.
+an estimate from a discharge curve. On a PRO X Wireless it matched G HUB
+exactly at the one point compared (27%).
 
 Mice on the `1d57:fa60` receiver are read by listening only; TrayJuice sends
 nothing to them. What was seen with a Delux M800:

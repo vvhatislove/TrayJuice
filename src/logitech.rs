@@ -1,7 +1,8 @@
 //! Logitech wireless headsets that speak HID++ over their USB receiver.
 //!
-//! Protocol details (request bytes, response layout, discharge curve) follow
-//! the HeadsetControl project: <https://github.com/Sapd/HeadsetControl>.
+//! Protocol details (request bytes, response layout, discharge polynomial)
+//! follow the HeadsetControl project: <https://github.com/Sapd/HeadsetControl>
+//! (`src/devices/logitech_gpro.c` in release 3.0.0 for the polynomial).
 
 use std::time::{Duration, Instant};
 
@@ -26,18 +27,23 @@ struct Model {
     usage: u16,
     /// Feature index + function of the "battery voltage" request.
     battery_cmd: [u8; 2],
-    /// `(millivolts, percent)`, descending.
-    curve: &'static [(u16, u8)],
+    /// Discharge polynomial, see [`percent_from_voltage`].
+    curve: &'static [f64],
+    /// Readings below this are a headset that is off, not an empty battery.
+    min_mv: u16,
 }
 
-const GPRO_CURVE: &[(u16, u8)] = &[
-    (4150, 100),
-    (3830, 50),
-    (3780, 30),
-    (3740, 20),
-    (3670, 5),
-    (3320, 0),
+/// Fitted to the G PRO series by HeadsetControl. Checked against G HUB on a
+/// PRO X Wireless: 3692 mV gives 27 %, the same number G HUB showed.
+const GPRO_CURVE: &[f64] = &[
+    -1.779_008_582_425_361_3e6,
+    2.369_215_330_734_489e3,
+    -1.258_090_504_150_684,
+    3.329_520_118_738_839_5e-4,
+    -4.391_398_173_359_75e-8,
+    2.309_312_104_553_990_7e-12,
 ];
+const GPRO_MIN_MV: u16 = 3300;
 
 const fn gpro(product_id: u16, name: &'static str) -> Model {
     Model {
@@ -47,6 +53,7 @@ const fn gpro(product_id: u16, name: &'static str) -> Model {
         usage: 0x0202,
         battery_cmd: [0x06, 0x0d],
         curve: GPRO_CURVE,
+        min_mv: GPRO_MIN_MV,
     }
 }
 
@@ -114,13 +121,30 @@ fn read_battery(dev: &HidDevice, model: &Model) -> Option<BatteryState> {
             continue;
         }
         let mv = u16::from_be_bytes([buf[4], buf[5]]);
-        let lowest = model.curve[model.curve.len() - 1].0;
-        if mv < lowest {
+        crate::log!(
+            "logitech: {} reports {mv} mV, state {:#04x}",
+            model.name,
+            buf[6]
+        );
+        if mv < model.min_mv {
             return None;
         }
         return Some(BatteryState::Level {
             percent: percent_from_voltage(model.curve, mv),
             charging: buf[6] == 0x03,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpro_curve_matches_known_points() {
+        assert_eq!(percent_from_voltage(GPRO_CURVE, 3692), 27);
+        assert_eq!(percent_from_voltage(GPRO_CURVE, 3900), 73);
+        assert_eq!(percent_from_voltage(GPRO_CURVE, 4200), 100);
+        assert_eq!(percent_from_voltage(GPRO_CURVE, 3300), 0);
     }
 }
