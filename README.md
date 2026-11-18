@@ -20,6 +20,9 @@ hover. Right-click it for:
 
 - **Show in taskbar**: turn the taskbar widget on or off. When it is off,
   the levels are still in the tray icon's tooltip.
+- **Start with Windows**: start TrayJuice when you sign in. It adds one
+  value to the current user's `Run` registry key and removes it when
+  unticked.
 - **Refresh now** and **Quit TrayJuice**.
 
 Levels refresh once a minute, and at once when a device appears or
@@ -38,6 +41,8 @@ disappears or reports a change by itself.
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.
 - The "Show in taskbar" choice is not saved between runs.
+- "Start with Windows" stores the path of the executable. After moving the
+  file, tick the menu item again.
 - A PRO X Wireless that was already past about 87% on the charger when
   TrayJuice started reads too low until it is unplugged (see "Supported
   devices"). The other Logitech models show no number while charging.

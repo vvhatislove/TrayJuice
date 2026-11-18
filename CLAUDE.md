@@ -57,6 +57,8 @@ Use the `probe` example to debug device communication. Stop a running
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
   examples get classic-style tooltips.
+- `src/autostart.rs`: the "Start with Windows" menu item, a value under
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
 - `src/icon.rs`: the app's tray icon, drawn in code.
 - `src/main.rs`: winit event loop, tray icon, menu, background poll thread,
@@ -150,7 +152,9 @@ Use the `probe` example to debug device communication. Stop a running
 
 - No network access, no telemetry, no update checks.
 - No administrator rights. Nothing is installed; settings, if added, live
-  under the app's own key in `HKCU` or in `%APPDATA%\TrayJuice`.
+  under the app's own key in `HKCU` or in `%APPDATA%\TrayJuice`. The one
+  exception is the "Start with Windows" value in the user's `Run` key,
+  written only when the user ticks that menu item.
 - Keep the app small: no GUI frameworks, webviews or async runtimes. Idle CPU
   use must stay negligible between polls: the only periodic work allowed is
   the widget's 400 ms tick (a few window queries).

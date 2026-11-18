@@ -23,6 +23,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const MENU_REFRESH: &str = "refresh";
 const MENU_QUIT: &str = "quit";
 const MENU_WIDGET: &str = "widget";
+const MENU_AUTOSTART: &str = "autostart";
 
 enum UserEvent {
     Statuses(Vec<DeviceStatus>),
@@ -34,6 +35,7 @@ struct App {
     tray: TrayIcon,
     widget: Widget,
     widget_item: CheckMenuItem,
+    autostart_item: CheckMenuItem,
     /// Latest poll result, kept so the widget can be rebuilt when toggled.
     statuses: Vec<DeviceStatus>,
     refresh: mpsc::Sender<()>,
@@ -76,6 +78,14 @@ impl ApplicationHandler<UserEvent> for App {
             }
             // The check mark has already been toggled by the menu itself.
             UserEvent::Menu(e) if e.id.as_ref() == MENU_WIDGET => self.show(),
+            UserEvent::Menu(e) if e.id.as_ref() == MENU_AUTOSTART => {
+                // Off the main thread: it shares its input queue with Explorer.
+                let wanted = self.autostart_item.is_checked();
+                thread::spawn(move || {
+                    let done = trayjuice::autostart::set(wanted);
+                    trayjuice::log!("autostart: set {wanted}, done={done}");
+                });
+            }
             UserEvent::Menu(e) if e.id.as_ref() == MENU_QUIT => {
                 self.widget.hide();
                 let _ = self.tray.set_visible(false);
@@ -144,9 +154,17 @@ fn main() {
     }));
 
     let widget_item = CheckMenuItem::with_id(MENU_WIDGET, "Show in taskbar", true, true, None);
+    let autostart_item = CheckMenuItem::with_id(
+        MENU_AUTOSTART,
+        "Start with Windows",
+        true,
+        trayjuice::autostart::is_enabled(),
+        None,
+    );
     let menu = Menu::new();
     menu.append_items(&[
         &widget_item,
+        &autostart_item,
         &MenuItem::with_id(MENU_REFRESH, "Refresh now", true, None),
         &MenuItem::with_id(MENU_QUIT, "Quit TrayJuice", true, None),
     ])
@@ -183,6 +201,7 @@ fn main() {
         tray,
         widget: Widget::new(),
         widget_item,
+        autostart_item,
         statuses: Vec::new(),
         refresh: refresh_tx,
     };
