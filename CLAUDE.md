@@ -49,6 +49,9 @@ Use the `probe` example to debug device communication. Stop a running
   minutes.
 - `src/xbox.rs`: Xbox / XInput gamepads through `XInputGetBatteryInformation`
   (four coarse levels, nothing for a controller on a cable).
+- `src/hotplug.rs`: asks for a few polls when Windows reports a device
+  interface arriving or leaving (`CM_Register_Notification`, no periodic
+  work), so a new device shows up without waiting for the regular poll.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so

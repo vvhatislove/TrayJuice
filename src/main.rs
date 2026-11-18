@@ -159,6 +159,8 @@ fn main() {
     let wake: Waker = Arc::new(move || {
         let _ = wake_tx.send(());
     });
+    let watching = trayjuice::hotplug::watch(wake.clone());
+    trayjuice::log!("hotplug: watching={watching}");
     thread::spawn(move || poll_loop(poll_proxy, refresh_rx, wake));
 
     // winit made the process DPI-aware above, so this is the real pixel size.

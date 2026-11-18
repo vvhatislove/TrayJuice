@@ -22,7 +22,8 @@ hover. Right-click it for:
   the levels are still in the tray icon's tooltip.
 - **Refresh now** and **Quit TrayJuice**.
 
-Levels refresh once a minute.
+Levels refresh once a minute, and at once when a device appears or
+disappears or reports a change by itself.
 
 ## Known limitations
 
