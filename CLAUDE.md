@@ -93,7 +93,9 @@ Use the `probe` example to debug device communication. Stop a running
   read in a loop with a deadline, and treat silence as `Offline`, never panic.
 - Do not poll more often than once every 30 seconds per device, apart from a
   refresh the user asked for or a change the device announced by itself
-  (repeats of the same state within 5 seconds are skipped). Polling wakes the radio and drains
+  (repeats of the same state within 5 seconds are skipped). A backend that
+  sends requests must enforce this itself: other backends ask for extra
+  polls, and every poll reaches every backend. Polling wakes the radio and drains
   the battery.
 - Mark a device as "tested" in `README.md` only after running it on real
   hardware. Verified so far: PRO X Wireless `046d:0aba`, Delux M800 on the

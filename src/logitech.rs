@@ -45,6 +45,11 @@ const HIDPP_ERROR: u8 = 0xff;
 const STATE_CHARGING: u8 = 0x03;
 
 const REPLY_TIMEOUT: Duration = Duration::from_millis(1000);
+/// A poll that comes sooner than this after the last request, and not
+/// because the headset announced a change, gets the last answer again. Other
+/// backends ask for polls too (a mouse on its charger did so every 2
+/// seconds), and each request wakes the headset's radio.
+const MIN_REQUEST_GAP: Duration = Duration::from_secs(30);
 /// A cable change comes as a burst of reports with the same charge state;
 /// one poll per burst is enough.
 const EVENT_QUIET: Duration = Duration::from_secs(5);
@@ -145,6 +150,10 @@ struct Listener {
 pub struct LogitechHeadsets {
     wake: Waker,
     listeners: Vec<Listener>,
+    /// Set by a listener when the headset announced a battery change.
+    announced: Arc<AtomicBool>,
+    /// When the headsets were last asked, and what they answered.
+    last: Option<(Instant, Vec<DeviceStatus>)>,
     /// Keyed by product ID.
     memory: HashMap<u16, Memory>,
 }
@@ -154,6 +163,8 @@ impl LogitechHeadsets {
         Self {
             wake,
             listeners: Vec::new(),
+            announced: Arc::new(AtomicBool::new(false)),
+            last: None,
             memory: HashMap::new(),
         }
     }
@@ -171,8 +182,9 @@ impl LogitechHeadsets {
         };
         let alive = Arc::new(AtomicBool::new(true));
         let (flag, wake, feature) = (alive.clone(), self.wake.clone(), model.battery_cmd[0]);
+        let announced = self.announced.clone();
         thread::spawn(move || {
-            listen(&dev, feature, &wake);
+            listen(&dev, feature, &announced, &wake);
             flag.store(false, Ordering::Relaxed);
         });
         self.listeners.push(Listener {
@@ -184,6 +196,12 @@ impl LogitechHeadsets {
 
 impl BatterySource for LogitechHeadsets {
     fn poll(&mut self, api: &HidApi) -> Vec<DeviceStatus> {
+        let announced = self.announced.swap(false, Ordering::Relaxed);
+        if let Some((at, statuses)) = &self.last
+            && !too_old(at.elapsed(), announced)
+        {
+            return statuses.clone();
+        }
         let mut out = Vec::new();
         for info in api.device_list() {
             if info.vendor_id() != VENDOR_LOGITECH {
@@ -210,13 +228,19 @@ impl BatterySource for LogitechHeadsets {
                 state,
             });
         }
+        self.last = Some((Instant::now(), out.clone()));
         out
     }
 }
 
+/// Whether an answer of this age has to be replaced by asking again.
+fn too_old(age: Duration, announced: bool) -> bool {
+    announced || age >= MIN_REQUEST_GAP
+}
+
 /// Blocks on the receiver and calls `wake` when the headset announces a
 /// battery change. Sends nothing. Returns when the receiver is unplugged.
-fn listen(dev: &HidDevice, feature: u8, wake: &Waker) {
+fn listen(dev: &HidDevice, feature: u8, announced: &AtomicBool, wake: &Waker) {
     let mut buf = [0u8; HIDPP_LONG_LEN];
     // Charge state and time of the last event that led to a poll.
     let mut last_wake: Option<(u8, Instant)> = None;
@@ -234,6 +258,7 @@ fn listen(dev: &HidDevice, feature: u8, wake: &Waker) {
         }
         last_wake = Some((buf[6], Instant::now()));
         crate::log!("logitech: battery event {:02x?}", &buf[..7]);
+        announced.store(true, Ordering::Relaxed);
         wake();
     }
 }
@@ -396,6 +421,13 @@ mod tests {
             state_from_reply(&MODELS[0], 0, 0x03, &mut memory, now),
             None
         );
+    }
+
+    #[test]
+    fn asks_again_only_when_due_or_announced() {
+        assert!(!too_old(Duration::from_secs(2), false));
+        assert!(too_old(Duration::from_secs(2), true));
+        assert!(too_old(Duration::from_secs(30), false));
     }
 
     #[test]
