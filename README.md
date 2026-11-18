@@ -15,7 +15,7 @@ level, for example `30%`. The text follows the taskbar theme and turns red at
 plugged in but the device is off or out of range.
 
 Hover a device on the taskbar to see its name in a tooltip above the
-taskbar. The tray holds a single TrayJuice icon that lists all levels on
+taskbar. Clicks go through the widget to the taskbar underneath. The tray holds a single TrayJuice icon that lists all levels on
 hover. Right-click it for:
 
 - **Show in taskbar**: turn the taskbar widget on or off. When it is off,
@@ -30,10 +30,12 @@ Levels refresh once a minute.
   Windows has no public API for. It was built on Windows 11 build 26200 at
   100% scaling and may stop working after a Windows update; the levels stay
   available in the tray icon's tooltip in that case.
-- With many open apps the widget can overlap taskbar buttons next to the
-  notification area.
+- With many open apps the widget can be drawn over taskbar buttons next to
+  the notification area. The buttons stay clickable.
+- Only one copy runs per user session; a second start exits at once.
 - Other display scales, the light theme, vertical or secondary taskbars and
-  Windows 10 are untested.
+  Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
+  Assets, because Segoe Fluent Icons does not exist there.
 - The "Show in taskbar" choice is not saved between runs.
 
 ## Supported devices
@@ -42,7 +44,7 @@ Levels refresh once a minute.
 |---|---|---|
 | Logitech PRO X Wireless (`046d:0aba`) | USB receiver | tested |
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
-| Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | tested, with limits (see below) |
+| Delux M800 (receiver `1d57:fa60` or `fa7d`, model byte `3a`) | USB receiver | tested on `fa60`, with limits (see below) |
 | Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
 | Xbox controllers and other XInput gamepads | Xbox Wireless Adapter | tested, four rough levels (see below) |
 | Xbox controllers and other XInput gamepads | Bluetooth | same API, untested |
@@ -51,13 +53,16 @@ Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve. On a PRO X Wireless it matched G HUB
 exactly at the one point compared (27%).
 
-Mice on the `1d57:fa60` receiver are read by listening only; TrayJuice sends
+Mice on the `1d57` receiver are read by listening only; TrayJuice sends
 nothing to them. What was seen with a Delux M800:
 
-- The mouse sends its level every 2 seconds, but only after the Delux app
-  has switched that stream on by showing its window. The stream stays on
-  after the app is closed. If the mouse shows a dash, open the Delux app
-  once. When no report arrives, the last level is kept for two hours.
+- While the mouse reports its level, a report arrives every 2 seconds. So
+  far reports were heard only while the Delux app was running or for a few
+  minutes after it was closed. Why they stop is not known yet.
+- When no report arrives, the last level is kept for 10 minutes and the
+  tooltip says how old it is; after that the mouse is shown with a dash.
+- The receiver has been seen with two product IDs, `fa60` and `fa7d`. All
+  tests were done with `fa60`.
 - TrayJuice opens the receiver's battery channel for 2.5 seconds per poll.
   An earlier build kept it open all the time, and the Delux app then showed
   "No Device" until the receiver was replugged.

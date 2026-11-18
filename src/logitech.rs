@@ -114,7 +114,9 @@ fn read_battery(dev: &HidDevice, model: &Model) -> Option<BatteryState> {
         if n < 7 || buf[0] != HIDPP_LONG || buf[1] != HIDPP_RECEIVER {
             continue;
         }
-        if buf[2] == HIDPP_ERROR && buf[3] == model.battery_cmd[0] {
+        // Error reply: `11 ff ff <feature> <function> <code>`. Other software
+        // can get errors for the same feature, so match the function too.
+        if buf[2] == HIDPP_ERROR && buf[3..5] == model.battery_cmd {
             return None;
         }
         if buf[2..4] != model.battery_cmd {

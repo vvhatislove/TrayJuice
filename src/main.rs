@@ -10,6 +10,8 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use trayjuice::device::{DeviceStatus, all_sources};
 use trayjuice::icon;
 use trayjuice::taskbar::Widget;
+use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -45,10 +47,7 @@ impl App {
             "TrayJuice: no supported devices".to_string()
         } else {
             let lines: Vec<String> = self.statuses.iter().map(DeviceStatus::summary).collect();
-            lines.join(
-                "
-",
-            )
+            lines.join("\n")
         };
         let _ = self.tray.set_tooltip(Some(tooltip));
 
@@ -113,7 +112,24 @@ fn poll_loop(proxy: EventLoopProxy<UserEvent>, refresh: mpsc::Receiver<()>) {
     }
 }
 
+/// `false` when another TrayJuice already runs in this user session. Two
+/// copies would draw their widgets on top of each other.
+fn first_instance() -> bool {
+    let name: Vec<u16> = "Local\\TrayJuice.SingleInstance"
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    // The handle is never closed: the mutex must live as long as the process.
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+    handle.is_null() || unsafe { GetLastError() } != ERROR_ALREADY_EXISTS
+}
+
 fn main() {
+    if !first_instance() {
+        trayjuice::log!("another instance is already running, exiting");
+        return;
+    }
+
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
         .expect("failed to create event loop");

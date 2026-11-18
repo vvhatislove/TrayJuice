@@ -39,8 +39,9 @@ Use the `probe` example to debug device communication. Stop a running
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
-  Listen-only, in a short window per poll; the last level is remembered.
-  The battery stream is switched on by the vendor app, not by us.
+  Listen-only, in a short window per poll; the last level is remembered for
+  10 minutes. Reports were heard only while the Delux app ran or shortly
+  after; what keeps them going is unknown (see the module docs).
 - `src/xbox.rs`: Xbox / XInput gamepads through `XInputGetBatteryInformation`
   (four coarse levels, nothing for a controller on a cable).
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
@@ -49,7 +50,8 @@ Use the `probe` example to debug device communication. Stop a running
   examples get classic-style tooltips.
 - `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
 - `src/icon.rs`: the app's tray icon, drawn in code.
-- `src/main.rs`: winit event loop, tray icons, menu, background poll thread.
+- `src/main.rs`: winit event loop, tray icon, menu, background poll thread,
+  single-instance mutex.
 
 ## Rules
 
@@ -69,9 +71,12 @@ Use the `probe` example to debug device communication. Stop a running
   a second apart (OpenMouse measurements). Never read feature report `0x10`:
   it can put the mouse into bootloader mode. Any write to this receiver
   needs the maintainer's go-ahead first.
-- Never keep a device handle open between polls. Vendor apps can lose the
-  device while we hold it: the Delux app shows "No Device" when the
-  receiver's battery collection is open elsewhere. Open, read, close.
+- Never keep a device handle open between polls: open, read, close. After
+  a build that held the Delux receiver's battery collection open, the Delux
+  app showed "No Device" until a replug (cause not proven).
+- Write down only what was observed. When a cause is a guess, say so in the
+  code comment and in `README.md`; several confident explanations of the
+  Delux battery stream turned out wrong.
 - Only send read-only requests to devices. No writes that change settings,
   firmware or pairing.
 - Only talk to interfaces matched by exact vendor ID, product ID, usage page
@@ -97,7 +102,13 @@ Use the `probe` example to debug device communication. Stop a running
   maintainer agrees first.
 - Nothing we create may be owned by a window inside the taskbar: a topmost
   popup owned by `Shell_TrayWnd` keeps the taskbar above fullscreen apps.
-  The tooltip is unowned and placed above the taskbar on `TTN_SHOW`.
+  The tooltip is unowned and placed above the taskbar.
+- The widget is `WS_EX_TRANSPARENT`: it must never take mouse input, or the
+  taskbar buttons under it stop working. Hover is detected on the 400 ms
+  tick from the cursor position, and only when the taskbar is what is under
+  the cursor (not a fullscreen app).
+- If the notification area (`TrayNotifyWnd`) is not found, remove the widget
+  instead of leaving it at its default position over the Start button.
 - Use system fonts ("Segoe Fluent Icons" for glyphs, "Segoe MDL2 Assets" for
   the gamepad whose Fluent glyph is a plain pill, "Segoe UI" for text) and
   follow the taskbar theme. Scale every pixel size by the taskbar DPI.
@@ -124,7 +135,8 @@ Use the `probe` example to debug device communication. Stop a running
 - No administrator rights. Nothing is installed; settings, if added, live
   under the app's own key in `HKCU` or in `%APPDATA%\TrayJuice`.
 - Keep the app small: no GUI frameworks, webviews or async runtimes. Idle CPU
-  use must stay at zero between polls.
+  use must stay negligible between polls: the only periodic work allowed is
+  the widget's 400 ms tick (a few window queries).
 - Add a dependency only when it replaces substantial code, and only with a
   license compatible with MIT. Commit `Cargo.lock`.
 

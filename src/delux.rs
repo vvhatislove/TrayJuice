@@ -1,16 +1,21 @@
-//! Delux / Attack Shark mice on the shared `1d57:fa60` 2.4 GHz receiver.
+//! Delux / Attack Shark mice on the shared `1d57` 2.4 GHz receiver.
 //!
 //! The receiver forwards the battery level as a 5-byte input report
 //! `03 <model> 40 <state> <percent>` on the `0x0A/0x00` collection. This
 //! backend only listens and never writes to the device.
 //!
-//! Two constraints shape it:
-//! - The Delux M800 sends the report only while the vendor app asks for it
-//!   (about every 2 seconds while its window is open), so most polls hear
-//!   nothing and the last level has to be remembered.
-//! - The vendor app shows "No Device" while another process keeps this
-//!   collection open, so it must be opened only for a short window per poll
-//!   and never held.
+//! What was observed with a Delux M800 (listening tests and one USB capture):
+//! - While the reports flow, one arrives about every 2 seconds.
+//! - They were heard only while the vendor app was running or within a few
+//!   minutes after it was closed, and stopped later every time (three times).
+//!   A 45-second USB capture showed the app sending nothing but string
+//!   descriptor reads, so what keeps the reports going is still unknown.
+//! - Because of that the last level is remembered for a while and its age
+//!   is put into the device name.
+//! - Once, after an earlier build had kept this collection open for minutes,
+//!   the vendor app showed "No Device" until the receiver was replugged.
+//!   Whether that was the cause is unproven, but the collection is opened
+//!   only for a short window per poll.
 //!
 //! Protocol facts come from:
 //! - OpenMouse, <https://github.com/OpenMouse-Project/mouse-protocol>
@@ -25,15 +30,19 @@ use hidapi::HidApi;
 use crate::device::{BatterySource, BatteryState, DeviceKind, DeviceStatus};
 
 const VENDOR: u16 = 0x1d57;
-const RECEIVER: u16 = 0xfa60;
+/// Product IDs of the receiver. The same dongle was seen as `fa60` (all
+/// tests were done in this mode) and, earlier, as `fa7d` (never listened to).
+/// Listening on an unverified ID is safe: nothing is written, and only
+/// reports of the exact battery format are accepted.
+const RECEIVERS: [u16; 2] = [0xfa60, 0xfa7d];
 const USAGE_PAGE: u16 = 0x000a;
 const USAGE: u16 = 0x0000;
 
-/// Listening window per poll. Long enough to catch one report while the
-/// vendor app is asking, short enough not to lock the app out for long.
+/// Listening window per poll: a bit longer than the 2 seconds between reports.
 const LISTEN: Duration = Duration::from_millis(2500);
-/// Reports are rare, so the last level stays valid for a long time.
-const REMEMBER: Duration = Duration::from_secs(2 * 60 * 60);
+/// How long the last level is still shown after the reports stop. After
+/// that the mouse counts as off.
+const REMEMBER: Duration = Duration::from_secs(10 * 60);
 
 /// The receiver is shared between brands; the model byte names the mouse.
 fn model_name(model: u8) -> &'static str {
@@ -81,7 +90,7 @@ impl BatterySource for DeluxMice {
     fn poll(&mut self, api: &HidApi) -> Vec<DeviceStatus> {
         let Some(info) = api.device_list().find(|d| {
             d.vendor_id() == VENDOR
-                && d.product_id() == RECEIVER
+                && RECEIVERS.contains(&d.product_id())
                 && d.usage_page() == USAGE_PAGE
                 && d.usage() == USAGE
         }) else {
@@ -110,20 +119,30 @@ impl BatterySource for DeluxMice {
 
         let (name, state) = match self.last {
             Some((reading, seen)) if seen.elapsed() < REMEMBER => (
-                model_name(reading.model),
+                display_name(reading.model, seen.elapsed()),
                 BatteryState::Level {
                     percent: reading.percent,
                     charging: reading.charging,
                 },
             ),
-            Some((reading, _)) => (model_name(reading.model), BatteryState::Offline),
-            None => (model_name(0), BatteryState::Offline),
+            Some((reading, _)) => (model_name(reading.model).to_string(), BatteryState::Offline),
+            None => (model_name(0).to_string(), BatteryState::Offline),
         };
         vec![DeviceStatus {
-            name: name.to_string(),
+            name,
             kind: DeviceKind::Mouse,
             state,
         }]
+    }
+}
+
+/// Device name for the tooltip. A level that was not heard during this poll
+/// says how old it is, so a stale number is not mistaken for a live one.
+fn display_name(model: u8, age: Duration) -> String {
+    let name = model_name(model);
+    match age.as_secs() / 60 {
+        0 => name.to_string(),
+        minutes => format!("{name} (heard {minutes} min ago)"),
     }
 }
 
@@ -152,6 +171,11 @@ mod tests {
         assert_eq!(
             parse_report(&[0x03, 0x3a, 0x40, 0x02, 0x32]),
             reading(0x3a, 50, true)
+        );
+        assert_eq!(display_name(0x3a, Duration::from_secs(20)), "Delux M800");
+        assert_eq!(
+            display_name(0x3a, Duration::from_secs(200)),
+            "Delux M800 (heard 3 min ago)"
         );
         // Too short, wrong report id, wrong event, unknown state, impossible level.
         assert_eq!(parse_report(&[0x03, 0x3a, 0x40, 0x01]), None);
