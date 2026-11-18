@@ -44,24 +44,22 @@ Levels refresh once a minute.
 |---|---|---|
 | Logitech PRO X Wireless (`046d:0aba`) | USB receiver | tested |
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
-| Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | experimental, off by default (see below) |
-| Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | experimental, untested |
+| Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | tested, with limits (see below) |
+| Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
 
 Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve and can differ from G HUB by a few percent.
 
-Mice on the `1d57:fa60` receiver are **off by default**. Set the
-`TRAYJUICE_EXPERIMENTAL_DELUX` environment variable to turn them on, and
-mind the problems seen with a Delux M800:
+Mice on the `1d57:fa60` receiver are read by listening only; TrayJuice sends
+nothing to them. What was seen with a Delux M800:
 
-- After TrayJuice kept the receiver's battery channel open for a few
-  minutes, the Delux app showed "No Device" until the receiver was
-  replugged. TrayJuice now opens it only for 2.5 seconds per poll, but that
-  has not been proven safe.
-- The mouse reports its level only while the Delux app window is open, so
-  the number is picked up then and kept for two hours.
-
-TrayJuice only listens on this receiver and sends nothing to the mouse.
+- The mouse sends its level every 2 seconds, but only after the Delux app
+  has switched that stream on by showing its window. The stream stays on
+  after the app is closed. If the mouse shows a dash, open the Delux app
+  once. When no report arrives, the last level is kept for two hours.
+- TrayJuice opens the receiver's battery channel for 2.5 seconds per poll.
+  An earlier build kept it open all the time, and the Delux app then showed
+  "No Device" until the receiver was replugged.
 
 Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).

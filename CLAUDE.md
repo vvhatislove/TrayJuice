@@ -21,6 +21,8 @@ fallback when the taskbar widget is off or cannot be embedded.
 
 - `cargo run --example hid_listen -- <vid> <pid> <usage_page> <usage>`
   passively prints input reports of one HID collection (sends nothing).
+- `cargo run --example delux_query` listens on the Delux receiver and sends
+  one harmless `GET_FEATURE 0xA0`; add `listen-only` to send nothing.
 - `cargo run --example widget_live` embeds the real widget with sample
   devices for 30 seconds and reports whether its window stays alive.
 
@@ -39,7 +41,7 @@ Use the `probe` example to debug device communication. Stop a running
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
   Listen-only, in a short window per poll; the last level is remembered.
-  Opt-in through `TRAYJUICE_EXPERIMENTAL_DELUX`, off by default.
+  The battery stream is switched on by the vendor app, not by us.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
@@ -62,9 +64,10 @@ Use the `probe` example to debug device communication. Stop a running
 - Prefer listening to reports the device sends by itself over asking for
   them. Some receivers (the `1d57` family) can freeze the radio link when
   written to.
-- A backend that has caused trouble on real hardware goes behind an opt-in
-  environment variable and is not enabled by default until the maintainer
-  confirms it is safe.
+- The `1d57` receiver freezes its radio link when two writes come less than
+  a second apart (OpenMouse measurements). Never read feature report `0x10`:
+  it can put the mouse into bootloader mode. Any write to this receiver
+  needs the maintainer's go-ahead first.
 - Never keep a device handle open between polls. Vendor apps can lose the
   device while we hold it: the Delux app shows "No Device" when the
   receiver's battery collection is open elsewhere. Open, read, close.
@@ -77,9 +80,8 @@ Use the `probe` example to debug device communication. Stop a running
 - Do not poll more often than once every 30 seconds per device, apart from a
   refresh the user asked for. Polling wakes the radio and drains the battery.
 - Mark a device as "tested" in `README.md` only after running it on real
-  hardware. Verified so far: PRO X Wireless `046d:0aba`. The Delux M800
-  backend reads correctly but broke the vendor app once, so it stays
-  experimental until it has run next to the Delux app without problems.
+  hardware. Verified so far: PRO X Wireless `046d:0aba` and Delux M800 on
+  the `1d57:fa60` receiver.
 
 ### Taskbar widget
 

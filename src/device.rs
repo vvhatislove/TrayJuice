@@ -49,18 +49,12 @@ pub trait BatterySource: Send {
     fn poll(&mut self, api: &HidApi) -> Vec<DeviceStatus>;
 }
 
-/// Environment variable that turns on the experimental Delux mouse backend.
-pub const DELUX_OPT_IN: &str = "TRAYJUICE_EXPERIMENTAL_DELUX";
-
-/// Backends to poll. The Delux mouse backend is opt-in: opening the receiver
-/// made the vendor app lose the mouse until the receiver was replugged.
+/// All backends compiled into this build.
 pub fn all_sources() -> Vec<Box<dyn BatterySource>> {
-    let mut sources: Vec<Box<dyn BatterySource>> =
-        vec![Box::new(crate::logitech::LogitechHeadsets)];
-    if std::env::var_os(DELUX_OPT_IN).is_some() {
-        sources.push(Box::new(crate::delux::DeluxMice::default()));
-    }
-    sources
+    vec![
+        Box::new(crate::logitech::LogitechHeadsets),
+        Box::new(crate::delux::DeluxMice::default()),
+    ]
 }
 
 /// Piecewise-linear interpolation over a discharge curve.
