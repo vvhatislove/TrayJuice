@@ -2,6 +2,8 @@
 
 Battery levels of your wireless peripherals, right on the Windows taskbar.
 
+![The widget on a dark and a light taskbar: a normal level, a charging device in green, a low one in red, a device charging without a known level, and one that is off](docs/widget.png)
+
 TrayJuice is a small Rust app that draws a device glyph and a percentage for
 each device next to the notification area, in the style of the system icons,
 so you never have to open a vendor app to find out whether your headset is

@@ -174,7 +174,10 @@ Use the `probe` example to debug device communication. Stop a running
   maintainer in Russian.
 - The repository is public. Commit locally when a piece of work is done, but
   push only when the maintainer says so.
-- Never commit build output, preview images or anything with personal data
+- `docs/widget.png` is the picture at the top of `README.md`: the output of
+  the `widget_preview` example converted to PNG. Regenerate it when the
+  widget's look changes.
+- Never commit build output, other preview images or anything with personal data
   (device serial numbers, user paths).
 - Update the "Supported devices" table and "Known limitations" in
   `README.md` in the same commit as the change they describe.
