@@ -43,7 +43,6 @@ Levels refresh once a minute.
 |---|---|---|
 | Logitech PRO X Wireless (`046d:0aba`) | USB receiver | tested |
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
-
 | Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | tested |
 | Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
 
