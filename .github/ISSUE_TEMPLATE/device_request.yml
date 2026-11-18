@@ -1,0 +1,61 @@
+name: Device request
+description: Ask for support of a headset, mouse, keyboard or gamepad
+title: "Device request: "
+labels: ["device request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TrayJuice can only show a device whose battery protocol is known. The report below tells what your device exposes to Windows; it takes a minute to make.
+
+        A device usually gets added when there is a public description of its protocol (another open project, vendor documentation) or when you can help test on your hardware.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Brand and exact model, as printed on the device or its box.
+      placeholder: Logitech G535
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How is it connected?
+      options:
+        - USB receiver (dongle)
+        - Bluetooth
+        - Both are possible
+    validations:
+      required: true
+  - type: textarea
+    id: probe
+    attributes:
+      label: Probe report
+      description: |
+        1. Connect the device and switch it on.
+        2. Press Win+R, paste the full path of `trayjuice.exe` followed by ` --probe` and press Enter, for example `"C:\Tools\TrayJuice\trayjuice.exe" --probe`.
+        3. After about 3 seconds Notepad opens with the report. Paste all of it here.
+
+        The report lists the HID devices of your PC: vendor and product IDs, usage numbers and product names. It holds no serial numbers. Remove lines you do not want to share, but keep the ones of the device you ask about.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: vendor-app
+    attributes:
+      label: Does the vendor's own app show the battery level?
+      description: Name the app and say what it shows (a percentage, bars, nothing).
+      placeholder: G HUB shows a percentage
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Known protocol sources
+      description: Links to open projects or documents that read this device's battery, if you know any (HeadsetControl, Solaar, OpenRGB, a vendor page).
+  - type: checkboxes
+    id: testing
+    attributes:
+      label: Testing
+      options:
+        - label: I can run test builds on this device and report what they show.

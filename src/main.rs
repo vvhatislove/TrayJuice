@@ -137,7 +137,20 @@ fn first_instance() -> bool {
     handle.is_null() || unsafe { GetLastError() } != ERROR_ALREADY_EXISTS
 }
 
+/// `--probe`: writes the device report to a file in the temp folder and
+/// opens it in Notepad, because this executable has no console to print to.
+fn write_probe_report() {
+    let path = std::env::temp_dir().join("trayjuice-probe.txt");
+    if std::fs::write(&path, trayjuice::probe::report(true)).is_ok() {
+        let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
+    }
+}
+
 fn main() {
+    if std::env::args().any(|a| a == "--probe") {
+        write_probe_report();
+        return;
+    }
     if !first_instance() {
         trayjuice::log!("another instance is already running, exiting");
         return;

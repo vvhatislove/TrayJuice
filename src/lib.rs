@@ -7,5 +7,6 @@ pub mod hotplug;
 pub mod icon;
 pub mod log;
 pub mod logitech;
+pub mod probe;
 pub mod taskbar;
 pub mod xbox;

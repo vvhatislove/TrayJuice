@@ -1,0 +1,39 @@
+name: Bug report
+description: Something shows wrong or does not work
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you saw, and what you expected instead. A screenshot of the taskbar helps.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: The device the problem is about, if any.
+      placeholder: Logitech PRO X Wireless
+  - type: input
+    id: version
+    attributes:
+      label: TrayJuice version
+      description: Right-click `trayjuice.exe`, Properties, Details.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and display scale
+      placeholder: Windows 11 24H2, 125%
+    validations:
+      required: true
+  - type: textarea
+    id: probe
+    attributes:
+      label: Probe report
+      description: |
+        For problems with a device. Press Win+R, paste the full path of `trayjuice.exe` followed by ` --probe` and press Enter; Notepad opens with the report after about 3 seconds. It lists HID devices (IDs and product names, no serial numbers); remove lines you do not want to share.
+      render: text

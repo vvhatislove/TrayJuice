@@ -63,6 +63,9 @@ Use the `probe` example to debug device communication. Stop a running
   examples get classic-style tooltips.
 - `src/autostart.rs`: the "Start with Windows" menu item, a value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+- `src/probe.rs`: the device report behind the `probe` example and
+  `trayjuice.exe --probe`, which users attach to device requests. It must
+  never include serial numbers or device paths.
 - `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
 - `src/icon.rs`: the app's tray icon, drawn in code.
 - `src/main.rs`: winit event loop, tray icon, menu, background poll thread,

@@ -139,6 +139,15 @@ unsigned build:
 In SignPath the artifact configuration has to describe a zip file with
 `trayjuice.exe` in it, because that is how GitHub stores the build output.
 
+## Asking for a device
+
+Open a [device request](https://github.com/vvhatislove/TrayJuice/issues/new?template=device_request.yml)
+and attach a probe report. To make one, run `trayjuice.exe --probe`: after
+about 3 seconds Notepad opens with the HID devices of the PC (IDs, usage
+numbers and product names, no serial numbers) and with what TrayJuice reads
+from the supported ones. The same file is saved as `trayjuice-probe.txt` in
+the temp folder.
+
 ## Adding a device
 
 1. Run `cargo run --example probe -- all` to list HID interfaces and see what
