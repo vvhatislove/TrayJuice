@@ -5,7 +5,7 @@ One tray icon per device; the icon is a coloured tile with the percentage.
 
 ## Commands
 
-- `cargo build --release` builds `targetelease	rayjuice.exe`.
+- `cargo build --release` builds `target\release\trayjuice.exe`.
 - `cargo test` runs the unit tests (voltage curve, icon rendering).
 - `cargo run --example probe` prints HID interfaces and battery readings to
   the console. Add `-- all` to list every vendor, not only Logitech.

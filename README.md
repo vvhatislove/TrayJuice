@@ -40,7 +40,7 @@ Requires Windows 10 or 11 and a [Rust toolchain](https://rustup.rs) (MSVC).
 cargo build --release
 ```
 
-The binary is `targetelease	rayjuice.exe`. It has no window and no
+The binary is `target\release\trayjuice.exe`. It has no window and no
 installer: run it and the icon appears. To start it with Windows, put a
 shortcut to it into the folder that `shell:startup` opens.
 
