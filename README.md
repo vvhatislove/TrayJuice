@@ -44,17 +44,24 @@ Levels refresh once a minute.
 |---|---|---|
 | Logitech PRO X Wireless (`046d:0aba`) | USB receiver | tested |
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
-| Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | tested, level updates rarely (see below) |
-| Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
+| Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | experimental, off by default (see below) |
+| Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | experimental, untested |
 
 Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve and can differ from G HUB by a few percent.
 
-Mice on the `1d57:fa60` receiver are read by listening only; TrayJuice sends
-nothing to them. The Delux M800 reports its level only while the vendor app
-window is open, so that is when TrayJuice can pick it up. Until the first
-report arrives after TrayJuice starts, the mouse is shown with a dash; after
-that the last level is kept for two hours.
+Mice on the `1d57:fa60` receiver are **off by default**. Set the
+`TRAYJUICE_EXPERIMENTAL_DELUX` environment variable to turn them on, and
+mind the problems seen with a Delux M800:
+
+- After TrayJuice kept the receiver's battery channel open for a few
+  minutes, the Delux app showed "No Device" until the receiver was
+  replugged. TrayJuice now opens it only for 2.5 seconds per poll, but that
+  has not been proven safe.
+- The mouse reports its level only while the Delux app window is open, so
+  the number is picked up then and kept for two hours.
+
+TrayJuice only listens on this receiver and sends nothing to the mouse.
 
 Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).
