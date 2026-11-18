@@ -37,9 +37,9 @@ Levels refresh once a minute.
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.
 - The "Show in taskbar" choice is not saved between runs.
-- The level of a Logitech headset on the charger is a rough estimate, and
-  above about 63% it is a guess from the time spent charging (see "Supported
-  devices"). It stops at 99% while the headset says it is charging.
+- The level of a Logitech headset on the charger is a rough estimate (see
+  "Supported devices"), measured between 21% and 82% only. It stops at 99%
+  while the headset says it is charging.
 
 ## Supported devices
 
@@ -59,17 +59,21 @@ exactly at the one point compared (27%).
 On the charger the headset reports a voltage about 0.3 V above the resting
 value, which the discharge curve would turn into a level far too high (21%
 read as 87% on a PRO X Wireless). Charging therefore uses a separate table,
-measured on one PRO X Wireless over one charge from 21% to about 61%; a
-second charge agreed within 5 points. From about 63% on the voltage no longer
-rises, and the level is advanced by the time spent charging instead. That
-part is a guess, since no charge has been logged to the end. For 20 minutes
-after unplugging the level is not allowed above the last estimate made on the
-charger, because the voltage needs that long to settle.
+measured on one PRO X Wireless over two charges between 21% and 82% and
+scaled to what G HUB showed (82% in G HUB against 79% by the discharge curve
+three minutes after unplugging). Below and above that range the table is
+extended in a straight line. For 20 minutes after unplugging the level is
+not allowed above the last estimate made on the charger, because the voltage
+takes a moment to drop.
 
 The PRO X Wireless announces by itself when the charging cable is plugged in
 or pulled, and TrayJuice listens for that, so the widget follows the cable
 within a second or two. Other models were not checked; without the
 announcement the change shows up at the next regular poll.
+
+A Delux M800 on its charging cable stays on the receiver and keeps reporting
+its level, now with a charging flag. Its reports come every 2 seconds and
+are read as they arrive, so the mouse follows the cable just as quickly.
 
 Mice on the `1d57` receiver are read by listening only; TrayJuice sends
 nothing to them. What was seen with a Delux M800:

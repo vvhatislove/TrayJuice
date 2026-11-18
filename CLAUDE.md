@@ -42,9 +42,11 @@ Use the `probe` example to debug device communication. Stop a running
   its charging cable changes and asks for a poll. On the charger the level
   comes from a separate measured table, not from the discharge polynomial.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
-  Listen-only. Keeps its handle open while the receiver is plugged in,
-  because the battery reports stop for good once nothing holds the receiver
-  open (see the module docs). The last level is remembered for 10 minutes.
+  Listen-only. A listener thread keeps its handle open while the receiver
+  is plugged in, because the battery reports stop for good once nothing
+  holds the receiver open (see the module docs). It asks for a poll when
+  the level or charging state changes. The last level is remembered for 10
+  minutes.
 - `src/xbox.rs`: Xbox / XInput gamepads through `XInputGetBatteryInformation`
   (four coarse levels, nothing for a controller on a cable).
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).

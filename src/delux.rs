@@ -13,10 +13,14 @@
 //!   receiver open (vendor app closed, TrayJuice opening it only for a short
 //!   window per poll), and came back only after a replug or reboot. With the
 //!   vendor app running they never stopped.
+//! - With the charging cable in, the mouse stays on the receiver and the
+//!   state byte changes from `01` to `03`; the level keeps being reported
+//!   (`03 3a 40 03 5c` at 92 %).
 //! - Working theory, not proven: Windows idles the receiver's interface once
 //!   its last handle is closed, and the receiver does not resume the reports
 //!   afterwards. This backend therefore keeps its handle open for as long as
-//!   the receiver is plugged in. With that change the reports kept coming
+//!   the receiver is plugged in: a listener thread owns it and reads every
+//!   report, so a change shows up within the 2 seconds between reports. With that change the reports kept coming
 //!   for 9 minutes after the vendor app was closed (10 polls out of 10);
 //!   before it they had stopped within 1 to 4 minutes.
 //!
@@ -26,11 +30,14 @@
 //! - mouse-battery-tray, <https://github.com/incconutwo/mouse-battery-tray>
 //!   (`battery_tray.pyw`: charging states).
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use hidapi::{HidApi, HidDevice};
 
-use crate::device::{BatterySource, BatteryState, DeviceKind, DeviceStatus};
+use crate::device::{BatterySource, BatteryState, DeviceKind, DeviceStatus, Waker};
 
 const VENDOR: u16 = 0x1d57;
 /// Product IDs of the receiver. The same dongle was seen as `fa60` (all
@@ -41,12 +48,12 @@ const RECEIVERS: [u16; 2] = [0xfa60, 0xfa7d];
 const USAGE_PAGE: u16 = 0x000a;
 const USAGE: u16 = 0x0000;
 
-/// How long one poll waits for a report when none is queued: a bit longer
-/// than the 2 seconds between reports.
-const LISTEN: Duration = Duration::from_millis(2500);
 /// How long the last level is still shown after the reports stop. After
 /// that the mouse counts as off.
 const REMEMBER: Duration = Duration::from_secs(10 * 60);
+/// A report after a silence this long means the mouse is back (woke up or
+/// was switched on), which is worth showing at once.
+const BACK_AFTER: Duration = Duration::from_secs(30);
 
 /// The receiver is shared between brands; the model byte names the mouse.
 fn model_name(model: u8) -> &'static str {
@@ -85,39 +92,59 @@ fn parse_report(report: &[u8]) -> Option<Reading> {
     }
 }
 
+/// What the listener thread shares with the poll thread.
 #[derive(Default)]
+struct Shared {
+    last: Mutex<Option<(Reading, Instant)>>,
+    /// Set once the receiver is gone and the thread has ended.
+    dead: AtomicBool,
+}
+
 pub struct DeluxMice {
-    /// Kept open between polls on purpose, see the module docs.
-    device: Option<HidDevice>,
-    last: Option<(Reading, Instant)>,
+    wake: Waker,
+    /// The listener of the receiver that is plugged in. Its thread owns the
+    /// handle and keeps it open on purpose, see the module docs.
+    listener: Option<Arc<Shared>>,
 }
 
 impl DeluxMice {
-    /// Returns the newest report: first whatever Windows queued since the
-    /// last poll, otherwise the next one to arrive within [`LISTEN`].
-    /// `Err` means the handle is dead (receiver unplugged).
-    fn listen(device: &HidDevice) -> Result<Option<Reading>, ()> {
-        let mut buf = [0u8; 16];
-        let mut newest = None;
-        loop {
-            match device.read_timeout(&mut buf, 0) {
-                Ok(0) => break,
-                Ok(n) => newest = parse_report(&buf[..n]).or(newest),
-                Err(_) => return Err(()),
-            }
+    pub fn new(wake: Waker) -> Self {
+        Self {
+            wake,
+            listener: None,
         }
-        let deadline = Instant::now() + LISTEN;
-        while newest.is_none() {
-            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
-                break;
-            };
-            let n = device
-                .read_timeout(&mut buf, left.as_millis() as i32)
-                .map_err(|_| ())?;
-            newest = parse_report(&buf[..n]);
-        }
-        Ok(newest)
     }
+}
+
+/// Reads the reports as they come, about one every 2 seconds, and keeps the
+/// newest. Asks for a poll when the level or the charging state changes or
+/// the mouse is heard again after a silence. Sends nothing. Returns when the
+/// receiver is unplugged.
+fn listen(device: &HidDevice, shared: &Shared, wake: &Waker) {
+    let mut buf = [0u8; 16];
+    loop {
+        let Ok(n) = device.read_timeout(&mut buf, -1) else {
+            return;
+        };
+        let Some(reading) = parse_report(&buf[..n]) else {
+            continue;
+        };
+        let before = shared
+            .last
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .replace((reading, Instant::now()));
+        if is_news(before, reading) {
+            crate::log!("delux: {reading:?}");
+            wake();
+        }
+    }
+}
+
+/// Whether `reading` differs from what was known `before` in a way the user
+/// should see right away.
+fn is_news(before: Option<(Reading, Instant)>, reading: Reading) -> bool {
+    before.is_none_or(|(old, at)| old != reading || at.elapsed() > BACK_AFTER)
 }
 
 impl BatterySource for DeluxMice {
@@ -128,27 +155,32 @@ impl BatterySource for DeluxMice {
                 && d.usage_page() == USAGE_PAGE
                 && d.usage() == USAGE
         }) else {
-            self.device = None;
-            self.last = None;
+            self.listener = None;
             return Vec::new();
         };
 
-        if self.device.is_none() {
-            self.device = info.open_device(api).ok();
-            crate::log!("delux: opened receiver: {}", self.device.is_some());
+        if self
+            .listener
+            .as_ref()
+            .is_none_or(|l| l.dead.load(Ordering::Relaxed))
+        {
+            self.listener = info.open_device(api).ok().map(|device| {
+                let shared = Arc::new(Shared::default());
+                let (theirs, wake) = (shared.clone(), self.wake.clone());
+                thread::spawn(move || {
+                    listen(&device, &theirs, &wake);
+                    theirs.dead.store(true, Ordering::Relaxed);
+                });
+                shared
+            });
+            crate::log!("delux: opened receiver: {}", self.listener.is_some());
         }
-        match self.device.as_ref().map(Self::listen) {
-            Some(Ok(Some(reading))) => {
-                crate::log!("delux: {reading:?}");
-                self.last = Some((reading, Instant::now()));
-            }
-            Some(Ok(None)) => crate::log!("delux: no report"),
-            // Reopen on the next poll.
-            Some(Err(())) => self.device = None,
-            None => {}
-        }
+        let last = self
+            .listener
+            .as_ref()
+            .and_then(|l| *l.last.lock().unwrap_or_else(|e| e.into_inner()));
 
-        let (name, state) = match self.last {
+        let (name, state) = match last {
             Some((reading, seen)) if seen.elapsed() < REMEMBER => (
                 display_name(reading.model, seen.elapsed()),
                 BatteryState::Level {
@@ -203,6 +235,11 @@ mod tests {
             parse_report(&[0x03, 0x3a, 0x40, 0x02, 0x32]),
             reading(0x3a, 50, true)
         );
+        // On the charger, as an M800 sent it.
+        assert_eq!(
+            parse_report(&[0x03, 0x3a, 0x40, 0x03, 0x5c]),
+            reading(0x3a, 92, true)
+        );
         assert_eq!(display_name(0x3a, Duration::from_secs(20)), "Delux M800");
         assert_eq!(
             display_name(0x3a, Duration::from_secs(200)),
@@ -214,5 +251,22 @@ mod tests {
         assert_eq!(parse_report(&[0x03, 0x3a, 0x41, 0x01, 0x64]), None);
         assert_eq!(parse_report(&[0x03, 0x3a, 0x40, 0x07, 0x64]), None);
         assert_eq!(parse_report(&[0x03, 0x3a, 0x40, 0x01, 0x65]), None);
+    }
+
+    #[test]
+    fn asks_for_a_poll_only_on_news() {
+        let now = Instant::now();
+        let known = reading(0x3a, 92, false).unwrap();
+        let on_charger = reading(0x3a, 92, true).unwrap();
+        assert!(is_news(None, known));
+        assert!(!is_news(Some((known, now)), known));
+        assert!(is_news(Some((known, now)), on_charger));
+        assert!(is_news(
+            Some((known, now)),
+            reading(0x3a, 91, false).unwrap()
+        ));
+        if let Some(long_ago) = now.checked_sub(Duration::from_secs(60)) {
+            assert!(is_news(Some((known, long_ago)), known));
+        }
     }
 }

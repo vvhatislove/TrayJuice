@@ -74,32 +74,35 @@ const GPRO_CURVE: &[f64] = &[
 ];
 const GPRO_MIN_MV: u16 = 3300;
 
-/// Voltage on the charger (mV) to percent. An estimate, measured on one
-/// PRO X Wireless over one charge from 21 % to about 61 % in 70 minutes: the
-/// voltages are the logged ones, the percentages assume the level rose
-/// evenly in between. A second charge from 57 % agreed within 5 points.
-/// Below the first point the first segment is extended; nothing was measured
-/// there.
+/// Voltage on the charger (mV) to percent. An estimate from two charges of
+/// one PRO X Wireless, scaled to what G HUB shows:
+///
+/// - Up to 4183 mV: a charge logged from 21 % to 71 % in 70 minutes (71 % is
+///   what the discharge polynomial said right after unplugging). The
+///   voltages are the logged ones; the percentages assume the level rose
+///   evenly in between.
+/// - The last two points are G HUB's own numbers, read from its settings
+///   database during a second charge (4233 mV: 81.8 %, 4237 mV: 82.4 %).
+///   Unplugged at 4240 mV, the headset read 3932 mV (79 %) three minutes
+///   later.
+///
+/// Outside the table the nearest segment is extended; nothing was measured
+/// below 21 % or above 82 %.
 const CHARGE_CURVE: &[(u16, u8)] = &[
     (3978, 21),
-    (4013, 24),
-    (4049, 28),
-    (4074, 33),
-    (4102, 42),
-    (4134, 51),
-    (4156, 56),
-    (4183, 61),
-    (4200, 63),
+    (4013, 25),
+    (4049, 30),
+    (4074, 36),
+    (4102, 47),
+    (4134, 59),
+    (4156, 65),
+    (4183, 71),
+    (4237, 82),
 ];
-/// From the last point of [`CHARGE_CURVE`] on, the voltage stops telling the
-/// level apart, so the time spent there is counted instead, at the rate of
-/// the measured charge (40 points in 70 minutes). This part is a guess: no
-/// charge was logged to the end, and charging usually slows down near full.
-const CHARGE_POINTS_PER_HOUR: f64 = 34.0;
 /// The headset still says "charging", so do not claim it is full.
 const CHARGE_MAX_PERCENT: u8 = 99;
 /// After unplugging, the voltage needs a while to fall back to its resting
-/// value (71 % right away, 59 % a quarter of an hour later). For this long
+/// value (4219 mV, which reads as 100 %, in the first second). For this long
 /// the level is not allowed above the last estimate made on the charger.
 const SETTLE: Duration = Duration::from_secs(20 * 60);
 
@@ -131,8 +134,6 @@ struct Memory {
     discharging: Option<u8>,
     /// Last estimate made on the charger, and when.
     charging: Option<(u8, Instant)>,
-    /// Since when the voltage has been at the top of [`CHARGE_CURVE`].
-    at_top_since: Option<Instant>,
 }
 
 /// One open receiver whose thread waits for reports the headset sends by itself.
@@ -282,9 +283,9 @@ fn read_battery(dev: &HidDevice, model: &Model) -> Option<(u16, u8)> {
 }
 
 /// Percent for a voltage read on the charger, from [`CHARGE_CURVE`].
-fn percent_on_charger(mv: u16) -> f64 {
+fn percent_on_charger(mv: u16) -> u8 {
     let curve = CHARGE_CURVE;
-    // The segment that holds `mv`; the first one also serves everything below.
+    // The segment that holds `mv`; the outer ones also serve what lies beyond.
     let i = curve[1..curve.len() - 1]
         .iter()
         .take_while(|p| p.0 <= mv)
@@ -292,7 +293,7 @@ fn percent_on_charger(mv: u16) -> f64 {
     let ((v0, p0), (v1, p1)) = (curve[i], curve[i + 1]);
     let slope = (p1 as f64 - p0 as f64) / (v1 as f64 - v0 as f64);
     let percent = p0 as f64 + (mv as f64 - v0 as f64) * slope;
-    percent.clamp(0.0, curve[curve.len() - 1].1 as f64)
+    percent.round().clamp(0.0, CHARGE_MAX_PERCENT as f64) as u8
 }
 
 /// Turns the voltage and charge state of a reply into a battery state.
@@ -313,27 +314,18 @@ fn state_from_reply(
             _ => memory.charging = None,
         }
         memory.discharging = Some(percent);
-        memory.at_top_since = None;
         return Some(BatteryState::Level {
             percent,
             charging: false,
         });
     }
 
-    let (top_mv, _) = CHARGE_CURVE[CHARGE_CURVE.len() - 1];
-    let mut estimate = percent_on_charger(mv);
-    if mv >= top_mv {
-        let since = *memory.at_top_since.get_or_insert(now);
-        estimate += now.duration_since(since).as_secs_f64() / 3600.0 * CHARGE_POINTS_PER_HOUR;
-    } else {
-        memory.at_top_since = None;
-    }
     // For the first minute on the charger the voltage is still climbing
     // (3910 mV at the moment of plugging in, 4140 mV a minute later), and a
     // battery on the charger does not lose charge: never go below the level
     // it had before.
     let floor = memory.discharging.unwrap_or(0);
-    let percent = (estimate.round() as u8).max(floor).min(CHARGE_MAX_PERCENT);
+    let percent = percent_on_charger(mv).max(floor).min(CHARGE_MAX_PERCENT);
     memory.charging = Some((percent, now));
     Some(BatteryState::Level {
         percent,
@@ -359,13 +351,15 @@ mod tests {
 
     #[test]
     fn charge_curve_interpolates_and_stays_in_range() {
-        assert_eq!(percent_on_charger(3978), 21.0);
-        assert_eq!(percent_on_charger(4118), 46.5);
-        assert_eq!(percent_on_charger(4200), 63.0);
-        assert_eq!(percent_on_charger(4300), 63.0);
-        // Below the first point the first segment is extended, down to zero.
-        assert!((percent_on_charger(3943) - 18.0).abs() < 1e-9);
-        assert_eq!(percent_on_charger(3400), 0.0);
+        assert_eq!(percent_on_charger(3978), 21);
+        assert_eq!(percent_on_charger(4118), 53);
+        assert_eq!(percent_on_charger(4233), 81);
+        assert_eq!(percent_on_charger(4237), 82);
+        // Beyond the table the outer segments are extended.
+        assert_eq!(percent_on_charger(3943), 17);
+        assert_eq!(percent_on_charger(4262), 87);
+        assert_eq!(percent_on_charger(3400), 0);
+        assert_eq!(percent_on_charger(4500), 99);
     }
 
     #[test]
@@ -381,28 +375,13 @@ mod tests {
         // Just plugged in: the voltage has not climbed yet, keep the old level.
         assert_eq!(at(60, 3910, 0x03), level(21, true));
         assert_eq!(at(120, 3978, 0x03), level(21, true));
-        assert_eq!(at(3000, 4126, 0x03), level(49, true));
-        assert_eq!(at(4200, 4183, 0x03), level(61, true));
-        // Unplugged: the polynomial says 71 % until the voltage settles.
-        assert_eq!(at(4260, 3889, 0x01), level(61, false));
-        assert_eq!(at(4800, 3849, 0x01), level(61, false));
-        // Settled and discharged a little; the cap no longer matters.
-        assert_eq!(at(6500, 3826, 0x01), level(57, false));
-    }
-
-    #[test]
-    fn counts_time_once_the_voltage_stops_rising() {
-        let model = &MODELS[0];
-        let mut memory = Memory::default();
-        let start = Instant::now();
-        let mut at = |mins: u64, mv| {
-            let now = start + Duration::from_secs(mins * 60);
-            state_from_reply(model, mv, 0x03, &mut memory, now)
-        };
-        assert_eq!(at(0, 4201), level(63, true));
-        assert_eq!(at(30, 4203), level(80, true));
-        // Still "charging", so never shown as full.
-        assert_eq!(at(120, 4205), level(99, true));
+        assert_eq!(at(4200, 4183, 0x03), level(71, true));
+        assert_eq!(at(5000, 4240, 0x03), level(83, true));
+        // Unplugged: the polynomial says 100 % until the voltage drops.
+        assert_eq!(at(5007, 4240, 0x01), level(83, false));
+        assert_eq!(at(5200, 3932, 0x01), level(79, false));
+        // Cable back in while the voltage is low again: keep the level.
+        assert_eq!(at(5210, 3941, 0x03), level(79, true));
     }
 
     #[test]

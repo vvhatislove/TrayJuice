@@ -58,8 +58,8 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 /// All backends compiled into this build.
 pub fn all_sources(wake: Waker) -> Vec<Box<dyn BatterySource>> {
     vec![
-        Box::new(crate::logitech::LogitechHeadsets::new(wake)),
-        Box::new(crate::delux::DeluxMice::default()),
+        Box::new(crate::logitech::LogitechHeadsets::new(wake.clone())),
+        Box::new(crate::delux::DeluxMice::new(wake)),
         Box::new(crate::xbox::XboxControllers),
     ]
 }
