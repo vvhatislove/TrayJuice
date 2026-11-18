@@ -92,7 +92,9 @@ nothing to them. What was seen with a Delux M800:
 Xbox controllers are read through XInput, which only tells four levels. They
 are shown as rough numbers: full 100%, medium 60%, low 25%, empty 5%, with
 the level word in the tooltip. A controller on a USB cable reports no
-battery level and is not shown.
+battery level; it is shown in green with a lightning bolt instead of a
+number. XInput does not tell whether the cable is charging anything, so the
+bolt also shows for a controller with AA cells on a cable.
 
 Other Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).

@@ -4,6 +4,12 @@
 //! full. They are shown as rough percentages, and the level word is part of
 //! the device name so the tooltip does not pretend to be exact.
 //!
+//! On a USB cable a controller reports `BATTERY_TYPE_WIRED` and a level that
+//! says nothing (an Xbox controller with a battery pack read "full" the
+//! moment the cable went in). It is shown as charging without a number.
+//! XInput does not tell whether the cable really charges anything: with AA
+//! cells it does not.
+//!
 //! API reference: `XInputGetBatteryInformation`,
 //! <https://learn.microsoft.com/windows/win32/api/xinput/nf-xinput-xinputgetbatteryinformation>
 
@@ -24,10 +30,32 @@ fn describe(level: u8) -> Option<(&'static str, u8)> {
     }
 }
 
-/// `true` for battery types that carry a level. A controller on a cable
-/// reports `BATTERY_TYPE_WIRED` and no usable level, so it is not shown.
+/// `true` for battery types that carry a level.
 fn has_battery(battery_type: u8) -> bool {
     matches!(battery_type, BATTERY_TYPE_ALKALINE | BATTERY_TYPE_NIMH)
+}
+
+/// Name and state for what XInput says about one connected controller, or
+/// `None` when there is nothing to show (no battery information yet).
+fn status_for(slot: u32, battery_type: u8, level: u8) -> Option<(String, BatteryState)> {
+    let number = slot + 1;
+    if battery_type == BATTERY_TYPE_WIRED {
+        return Some((
+            format!("Xbox controller {number} (on cable)"),
+            BatteryState::Charging,
+        ));
+    }
+    if !has_battery(battery_type) {
+        return None;
+    }
+    let (word, percent) = describe(level)?;
+    Some((
+        format!("Xbox controller {number} (battery {word})"),
+        BatteryState::Level {
+            percent,
+            charging: false,
+        },
+    ))
 }
 
 pub struct XboxControllers;
@@ -47,19 +75,16 @@ impl BatterySource for XboxControllers {
                 info.BatteryType,
                 info.BatteryLevel
             );
-            if status != ERROR_SUCCESS || !has_battery(info.BatteryType) {
+            if status != ERROR_SUCCESS {
                 continue;
             }
-            let Some((word, percent)) = describe(info.BatteryLevel) else {
+            let Some((name, state)) = status_for(slot, info.BatteryType, info.BatteryLevel) else {
                 continue;
             };
             out.push(DeviceStatus {
-                name: format!("Xbox controller {} (battery {word})", slot + 1),
+                name,
                 kind: DeviceKind::Gamepad,
-                state: BatteryState::Level {
-                    percent,
-                    charging: false,
-                },
+                state,
             });
         }
         out
@@ -78,5 +103,24 @@ mod tests {
         assert!(has_battery(BATTERY_TYPE_NIMH));
         assert!(!has_battery(BATTERY_TYPE_WIRED));
         assert!(!has_battery(BATTERY_TYPE_DISCONNECTED));
+        assert_eq!(
+            status_for(0, BATTERY_TYPE_NIMH, BATTERY_LEVEL_MEDIUM),
+            Some((
+                "Xbox controller 1 (battery medium)".to_string(),
+                BatteryState::Level {
+                    percent: 60,
+                    charging: false
+                }
+            ))
+        );
+        // On a cable the level says "full" whatever the battery holds.
+        assert_eq!(
+            status_for(1, BATTERY_TYPE_WIRED, BATTERY_LEVEL_FULL),
+            Some((
+                "Xbox controller 2 (on cable)".to_string(),
+                BatteryState::Charging
+            ))
+        );
+        assert_eq!(status_for(0, BATTERY_TYPE_DISCONNECTED, 0), None);
     }
 }
