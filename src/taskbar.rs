@@ -45,7 +45,13 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
 }
 
-/// Glyph in the "Segoe Fluent Icons" font shipped with Windows 11.
+/// The gamepad glyph of "Segoe Fluent Icons" is a plain pill; the one in the
+/// older "Segoe MDL2 Assets" font has grips and reads as a controller.
+fn uses_mdl2(kind: DeviceKind) -> bool {
+    kind == DeviceKind::Gamepad
+}
+
+/// Glyph code point; the same in "Segoe Fluent Icons" and "Segoe MDL2 Assets".
 fn glyph(kind: DeviceKind) -> char {
     match kind {
         DeviceKind::Headset => '\u{e7f6}',
@@ -80,7 +86,7 @@ fn style(state: &BatteryState, light: bool) -> (Rgb, u32) {
 
 struct Run {
     text: Vec<u16>,
-    icon: bool,
+    font: HFONT,
     x: i32,
     y: i32,
     width: i32,
@@ -118,6 +124,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
             )
         };
         let icon_font = font("Segoe Fluent Icons", px(16));
+        let mdl2_font = font("Segoe MDL2 Assets", px(16));
         let text_font = font("Segoe UI", px(13));
         let old_font = SelectObject(dc, icon_font);
 
@@ -136,12 +143,17 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
                 (label(&status.state), false),
             ] {
                 let text: Vec<u16> = text.encode_utf16().collect();
-                SelectObject(dc, if icon { icon_font } else { text_font });
+                let font = match (icon, uses_mdl2(status.kind)) {
+                    (true, true) => mdl2_font,
+                    (true, false) => icon_font,
+                    (false, _) => text_font,
+                };
+                SelectObject(dc, font);
                 let mut size = SIZE { cx: 0, cy: 0 };
                 GetTextExtentPoint32W(dc, text.as_ptr(), text.len() as i32, &mut size);
                 runs.push(Run {
                     text,
-                    icon,
+                    font,
                     x,
                     y: (height - size.cy) / 2,
                     width: size.cx,
@@ -156,6 +168,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
         if width == 0 || height <= 0 {
             SelectObject(dc, old_font);
             DeleteObject(icon_font);
+            DeleteObject(mdl2_font);
             DeleteObject(text_font);
             DeleteDC(dc);
             return Bitmap {
@@ -180,7 +193,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
         SetBkMode(dc, TRANSPARENT as i32);
         SetTextColor(dc, 0x00ff_ffff);
         for run in &runs {
-            SelectObject(dc, if run.icon { icon_font } else { text_font });
+            SelectObject(dc, run.font);
             TextOutW(dc, run.x, run.y, run.text.as_ptr(), run.text.len() as i32);
         }
         GdiFlush();
@@ -213,6 +226,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
         SelectObject(dc, old_font);
         DeleteObject(dib);
         DeleteObject(icon_font);
+        DeleteObject(mdl2_font);
         DeleteObject(text_font);
         DeleteDC(dc);
         Bitmap {

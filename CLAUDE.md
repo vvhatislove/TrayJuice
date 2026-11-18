@@ -99,7 +99,8 @@ Use the `probe` example to debug device communication. Stop a running
 - Nothing we create may be owned by a window inside the taskbar: a topmost
   popup owned by `Shell_TrayWnd` keeps the taskbar above fullscreen apps.
   The tooltip is unowned and placed above the taskbar on `TTN_SHOW`.
-- Use system fonts ("Segoe Fluent Icons" for glyphs, "Segoe UI" for text) and
+- Use system fonts ("Segoe Fluent Icons" for glyphs, "Segoe MDL2 Assets" for
+  the gamepad whose Fluent glyph is a plain pill, "Segoe UI" for text) and
   follow the taskbar theme. Scale every pixel size by the taskbar DPI.
 
 ### Threads
