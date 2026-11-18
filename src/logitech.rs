@@ -59,6 +59,11 @@ const REPLY_TIMEOUT: Duration = Duration::from_millis(1000);
 /// backends ask for polls too (a mouse on its charger did so every 2
 /// seconds), and each request wakes the headset's radio.
 const MIN_REQUEST_GAP: Duration = Duration::from_secs(30);
+/// One failed request does not mean the headset is off: a request failed at
+/// the very moment another USB device (a gamepad) was switched off, and the
+/// headset answered again right after. The old level stays, and the headset
+/// is asked once more after this long before it is shown as off.
+const RETRY_AFTER: Duration = Duration::from_secs(3);
 /// A cable change comes as a burst of reports with the same charge state;
 /// one poll per burst is enough.
 const EVENT_QUIET: Duration = Duration::from_secs(5);
@@ -190,6 +195,10 @@ struct Memory {
     /// The voltage has reached the top of the rising stage during this
     /// charge, so it is read along the topping stage from now on.
     topping: bool,
+    /// What the last successful request gave.
+    shown: Option<BatteryState>,
+    /// The request before this one failed.
+    missed: bool,
 }
 
 /// One open receiver whose thread waits for reports the headset sends by itself.
@@ -205,6 +214,8 @@ pub struct LogitechHeadsets {
     announced: Arc<AtomicBool>,
     /// When the headsets were last asked, and what they answered.
     last: Option<(Instant, Vec<DeviceStatus>)>,
+    /// A request failed and is due to be repeated at this time.
+    retry_at: Option<Instant>,
     /// Keyed by product ID.
     memory: HashMap<u16, Memory>,
 }
@@ -216,6 +227,7 @@ impl LogitechHeadsets {
             listeners: Vec::new(),
             announced: Arc::new(AtomicBool::new(false)),
             last: None,
+            retry_at: None,
             memory: HashMap::new(),
         }
     }
@@ -248,11 +260,13 @@ impl LogitechHeadsets {
 impl BatterySource for LogitechHeadsets {
     fn poll(&mut self, api: &HidApi) -> Vec<DeviceStatus> {
         let announced = self.announced.swap(false, Ordering::Relaxed);
+        let retry_due = self.retry_at.is_some_and(|at| Instant::now() >= at);
         if let Some((at, statuses)) = &self.last
-            && !too_old(at.elapsed(), announced)
+            && !too_old(at.elapsed(), announced || retry_due)
         {
             return statuses.clone();
         }
+        self.retry_at = None;
         let mut out = Vec::new();
         for info in api.device_list() {
             if info.vendor_id() != VENDOR_LOGITECH {
@@ -267,12 +281,21 @@ impl BatterySource for LogitechHeadsets {
             };
             self.ensure_listener(api, info.path(), model);
             let memory = self.memory.entry(model.product_id).or_default();
-            let state = info
+            let reading = info
                 .open_device(api)
                 .ok()
                 .and_then(|dev| read_battery(&dev, model))
-                .and_then(|(mv, state)| state_from_reply(model, mv, state, memory, Instant::now()))
-                .unwrap_or(BatteryState::Offline);
+                .and_then(|(mv, state)| state_from_reply(model, mv, state, memory, Instant::now()));
+            let (state, retry) = after_request(memory, reading);
+            if retry {
+                crate::log!("logitech: {} did not answer, asking again", model.name);
+                self.retry_at = Some(Instant::now() + RETRY_AFTER);
+                let wake = self.wake.clone();
+                thread::spawn(move || {
+                    thread::sleep(RETRY_AFTER);
+                    wake();
+                });
+            }
             out.push(DeviceStatus {
                 name: model.name.to_string(),
                 kind: DeviceKind::Headset,
@@ -285,8 +308,30 @@ impl BatterySource for LogitechHeadsets {
 }
 
 /// Whether an answer of this age has to be replaced by asking again.
-fn too_old(age: Duration, announced: bool) -> bool {
-    announced || age >= MIN_REQUEST_GAP
+/// `wanted` is set when the headset announced a change or a retry is due.
+fn too_old(age: Duration, wanted: bool) -> bool {
+    wanted || age >= MIN_REQUEST_GAP
+}
+
+/// What to show after a request, and whether to ask again soon. The first
+/// request that fails after a good one keeps the old state; the second one
+/// in a row means the headset is off.
+fn after_request(memory: &mut Memory, reading: Option<BatteryState>) -> (BatteryState, bool) {
+    match (reading, memory.shown.clone()) {
+        (Some(state), _) => {
+            memory.missed = false;
+            memory.shown = Some(state.clone());
+            (state, false)
+        }
+        (None, Some(old)) if !memory.missed => {
+            memory.missed = true;
+            (old, true)
+        }
+        (None, _) => {
+            memory.shown = None;
+            (BatteryState::Offline, false)
+        }
+    }
 }
 
 /// Blocks on the receiver and calls `wake` when the headset announces a
@@ -512,6 +557,40 @@ mod tests {
         assert_eq!(
             state_from_reply(&MODELS[0], 0, 0x03, &mut memory, now),
             None
+        );
+    }
+
+    #[test]
+    fn one_failed_request_keeps_the_level() {
+        let mut memory = Memory::default();
+        let good = level(85, false);
+        assert_eq!(
+            after_request(&mut memory, good.clone()),
+            (good.clone().unwrap(), false)
+        );
+        // First miss: keep the level and ask again.
+        assert_eq!(
+            after_request(&mut memory, None),
+            (good.clone().unwrap(), true)
+        );
+        // Second miss in a row: the headset is off.
+        assert_eq!(
+            after_request(&mut memory, None),
+            (BatteryState::Offline, false)
+        );
+        assert_eq!(
+            after_request(&mut memory, None),
+            (BatteryState::Offline, false)
+        );
+        // An answer after a single miss clears it.
+        after_request(&mut memory, good.clone());
+        after_request(&mut memory, None);
+        after_request(&mut memory, good.clone());
+        assert_eq!(after_request(&mut memory, None), (good.unwrap(), true));
+        // A headset that was never heard is off at once.
+        assert_eq!(
+            after_request(&mut Memory::default(), None),
+            (BatteryState::Offline, false)
         );
     }
 
