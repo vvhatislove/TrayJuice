@@ -4,7 +4,10 @@
 use trayjuice::device::{BatteryState, DeviceKind, DeviceStatus};
 use trayjuice::taskbar::render;
 
-const ZOOM: usize = 3;
+/// The widget is drawn at this multiple of 100% scaling, so the picture is
+/// large and still sharp.
+const SCALE: i32 = 3;
+const ZOOM: usize = 1;
 
 fn main() {
     let device = |kind, state| DeviceStatus {
@@ -25,7 +28,7 @@ fn main() {
     let themes = [(false, [0x1cu32, 0x1c, 0x1c]), (true, [0xf3, 0xf3, 0xf3])];
     let bitmaps: Vec<_> = themes
         .iter()
-        .map(|t| render(&statuses, 48, 96, t.0))
+        .map(|t| render(&statuses, 48 * SCALE, 96 * SCALE as u32, t.0))
         .collect();
     let (bw, bh) = (bitmaps[0].width as usize, bitmaps[0].height as usize);
     let (w, h) = (bw * ZOOM, bh * ZOOM * themes.len());
