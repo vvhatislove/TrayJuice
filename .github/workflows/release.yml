@@ -25,7 +25,7 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
 
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload the unsigned executable
         id: unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trayjuice-unsigned
           path: unsigned/trayjuice.exe
