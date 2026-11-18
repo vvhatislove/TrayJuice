@@ -280,6 +280,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         reposition(hwnd);
         return 0;
     }
+    if msg == WM_MOUSEACTIVATE {
+        return MA_NOACTIVATE as LRESULT;
+    }
     match msg {
         WM_CLOSE => crate::log!("widget {hwnd:?}: WM_CLOSE"),
         WM_DESTROY => crate::log!("widget {hwnd:?}: WM_DESTROY"),
@@ -291,7 +294,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 
 pub struct Widget {
     hwnd: HWND,
-    /// Tooltip control owned by `hwnd`; rebuilt whenever the content changes.
+    /// Unowned tooltip control; rebuilt whenever the content changes.
     tooltip: HWND,
     /// What is currently drawn, to skip redundant redraws.
     shown: Option<(Vec<DeviceStatus>, bool)>,
@@ -384,11 +387,13 @@ impl Widget {
 
     pub fn hide(&mut self) {
         if !self.hwnd.is_null() {
-            // Destroying the widget also destroys the tooltip it owns.
             unsafe { DestroyWindow(self.hwnd) };
             self.hwnd = null_mut();
         }
-        self.tooltip = null_mut();
+        if !self.tooltip.is_null() {
+            unsafe { DestroyWindow(self.tooltip) };
+            self.tooltip = null_mut();
+        }
         self.shown = None;
     }
 }
@@ -406,6 +411,7 @@ unsafe fn create_window(bar: HWND) -> HWND {
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wndproc),
             hInstance: instance,
+            hCursor: LoadCursorW(null_mut(), IDC_ARROW),
             lpszClassName: class.as_ptr(),
             ..std::mem::zeroed()
         };
@@ -439,6 +445,10 @@ unsafe fn create_window(bar: HWND) -> HWND {
 }
 
 /// Creates a tooltip control with one hover area per device.
+///
+/// The tooltip is deliberately created without an owner. An owner inside the
+/// taskbar resolves to `Shell_TrayWnd` itself, and a topmost popup owned by
+/// the taskbar keeps the taskbar above fullscreen apps.
 unsafe fn create_tooltip(
     owner: HWND,
     statuses: &[DeviceStatus],
@@ -454,7 +464,7 @@ unsafe fn create_tooltip(
 
         let instance = GetModuleHandleW(null());
         let tooltip = CreateWindowExW(
-            WS_EX_TOPMOST,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             wide("tooltips_class32").as_ptr(),
             null(),
             WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
@@ -462,7 +472,7 @@ unsafe fn create_tooltip(
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            owner,
+            null_mut(),
             null_mut(),
             instance,
             null(),
