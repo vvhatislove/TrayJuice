@@ -26,7 +26,7 @@ fn main() {
 
     println!("\nBattery:");
     let mut found = false;
-    for mut source in all_sources() {
+    for mut source in all_sources(std::sync::Arc::new(|| {})) {
         for status in source.poll(&api) {
             found = true;
             println!("  {}: {:?}", status.name, status.state);

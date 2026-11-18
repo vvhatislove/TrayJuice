@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use std::sync::Arc;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
@@ -7,7 +8,7 @@ use std::time::Duration;
 use hidapi::HidApi;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
-use trayjuice::device::{DeviceStatus, all_sources};
+use trayjuice::device::{DeviceStatus, Waker, all_sources};
 use trayjuice::icon;
 use trayjuice::taskbar::Widget;
 use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
@@ -89,8 +90,8 @@ impl ApplicationHandler<UserEvent> for App {
 }
 
 /// Polls all devices every [`POLL_INTERVAL`], or sooner when `refresh` fires.
-fn poll_loop(proxy: EventLoopProxy<UserEvent>, refresh: mpsc::Receiver<()>) {
-    let mut sources = all_sources();
+fn poll_loop(proxy: EventLoopProxy<UserEvent>, refresh: mpsc::Receiver<()>, wake: Waker) {
+    let mut sources = all_sources(wake);
     let mut api = HidApi::new().ok();
     loop {
         let statuses = match api.as_mut() {
@@ -109,6 +110,8 @@ fn poll_loop(proxy: EventLoopProxy<UserEvent>, refresh: mpsc::Receiver<()>) {
         if let Err(RecvTimeoutError::Disconnected) = refresh.recv_timeout(POLL_INTERVAL) {
             return;
         }
+        // Several requests that piled up during the poll need one poll, not many.
+        while refresh.try_recv().is_ok() {}
     }
 }
 
@@ -151,7 +154,12 @@ fn main() {
 
     let (refresh_tx, refresh_rx) = mpsc::channel();
     let poll_proxy = event_loop.create_proxy();
-    thread::spawn(move || poll_loop(poll_proxy, refresh_rx));
+    // Backends ask for a poll through the same channel as "Refresh now".
+    let wake_tx = refresh_tx.clone();
+    let wake: Waker = Arc::new(move || {
+        let _ = wake_tx.send(());
+    });
+    thread::spawn(move || poll_loop(poll_proxy, refresh_rx, wake));
 
     // winit made the process DPI-aware above, so this is the real pixel size.
     let icon_size = unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16) as usize;

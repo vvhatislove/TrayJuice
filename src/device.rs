@@ -1,14 +1,14 @@
 //! Vendor-independent battery model. Every backend (Logitech HID++, and later
 //! Bluetooth, other dongles…) reports its devices as [`DeviceStatus`].
 
+use std::sync::Arc;
+
 use hidapi::HidApi;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatteryState {
     /// Device is reachable and reported a level.
     Level { percent: u8, charging: bool },
-    /// On the charger, and the device gives no usable level while it charges.
-    Charging,
     /// Receiver is plugged in, but the device itself is off or out of range.
     Offline,
 }
@@ -39,7 +39,6 @@ impl DeviceStatus {
                 charging: true,
             } => format!("{}: {percent}% (charging)", self.name),
             BatteryState::Level { percent, .. } => format!("{}: {percent}%", self.name),
-            BatteryState::Charging => format!("{}: charging", self.name),
             BatteryState::Offline => format!("{}: off", self.name),
         }
     }
@@ -52,10 +51,14 @@ pub trait BatterySource: Send {
     fn poll(&mut self, api: &HidApi) -> Vec<DeviceStatus>;
 }
 
+/// Asks for an extra poll right away. A backend calls it from its own
+/// thread when a device announces a change by itself.
+pub type Waker = Arc<dyn Fn() + Send + Sync>;
+
 /// All backends compiled into this build.
-pub fn all_sources() -> Vec<Box<dyn BatterySource>> {
+pub fn all_sources(wake: Waker) -> Vec<Box<dyn BatterySource>> {
     vec![
-        Box::new(crate::logitech::LogitechHeadsets),
+        Box::new(crate::logitech::LogitechHeadsets::new(wake)),
         Box::new(crate::delux::DeluxMice::default()),
         Box::new(crate::xbox::XboxControllers),
     ]

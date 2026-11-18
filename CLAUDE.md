@@ -37,7 +37,10 @@ Use the `probe` example to debug device communication. Stop a running
 
 - `src/device.rs`: `BatteryState`, `DeviceKind`, `DeviceStatus`, the
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
-- `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
+- `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver. A
+  listener thread per receiver waits for the report the headset sends when
+  its charging cable changes and asks for a poll. On the charger the level
+  comes from a separate measured table, not from the discharge polynomial.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
   Listen-only. Keeps its handle open while the receiver is plugged in,
   because the battery reports stop for good once nothing holds the receiver
@@ -74,7 +77,9 @@ Use the `probe` example to debug device communication. Stop a running
 - Close device handles between polls unless a backend documents why it must
   not. `src/delux.rs` is the exception: closing the last handle of the
   `1d57` receiver stops its battery reports until a replug. The Delux app
-  showing "No Device" is that same symptom, not a conflict with us.
+  showing "No Device" is that same symptom, not a conflict with us. The
+  listener in `src/logitech.rs` is the other one: a report sent while
+  nothing is open would be lost. It only reads.
 - Write down only what was observed. When a cause is a guess, say so in the
   code comment and in `README.md`; several confident explanations of the
   Delux battery stream turned out wrong.
@@ -85,7 +90,9 @@ Use the `probe` example to debug device communication. Stop a running
 - Other software (G HUB) shares the same receiver. Match replies by header,
   read in a loop with a deadline, and treat silence as `Offline`, never panic.
 - Do not poll more often than once every 30 seconds per device, apart from a
-  refresh the user asked for. Polling wakes the radio and drains the battery.
+  refresh the user asked for or a change the device announced by itself
+  (repeats of the same state within 5 seconds are skipped). Polling wakes the radio and drains
+  the battery.
 - Mark a device as "tested" in `README.md` only after running it on real
   hardware. Verified so far: PRO X Wireless `046d:0aba`, Delux M800 on the
   `1d57:fa60` receiver, and an Xbox controller on the Xbox Wireless Adapter.
@@ -116,9 +123,10 @@ Use the `probe` example to debug device communication. Stop a running
 
 ### Threads
 
-- All HID access happens on the poll thread; all window, tray and menu calls
-  happen on the main thread. They talk through `EventLoopProxy` and an mpsc
-  channel.
+- All HID access happens on the poll thread and on listener threads a
+  backend starts (they block in a read and send nothing); all window, tray
+  and menu calls happen on the main thread. They talk through
+  `EventLoopProxy` and an mpsc channel.
 
 ### Verifying changes
 
