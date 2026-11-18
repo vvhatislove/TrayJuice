@@ -56,10 +56,15 @@ impl App {
     }
 
     fn show_app_icon(&mut self) {
-        let tooltip = self.statuses.iter().map(tooltip).collect::<Vec<_>>().join(
-            "
+        let tooltip = self
+            .statuses
+            .iter()
+            .map(DeviceStatus::summary)
+            .collect::<Vec<_>>()
+            .join(
+                "
 ",
-        );
+            );
         match &self.app_icon {
             Some(tray) => {
                 let _ = tray.set_tooltip(Some(tooltip));
@@ -93,7 +98,7 @@ impl App {
         }
         for (i, status) in statuses.into_iter().enumerate() {
             let image = self.image(&status.state);
-            let tooltip = tooltip(&status);
+            let tooltip = status.summary();
             match self.icons.get_mut(i) {
                 Some((old, tray)) => {
                     if *old != status {
@@ -123,19 +128,6 @@ impl App {
         let size = self.icon_size;
         Icon::from_rgba(icon::render(state, size), size as u32, size as u32)
             .expect("icon buffer has the right size")
-    }
-}
-
-fn tooltip(status: &DeviceStatus) -> String {
-    match status.state {
-        BatteryState::Level {
-            percent,
-            charging: true,
-        } => {
-            format!("{}: {percent}% (charging)", status.name)
-        }
-        BatteryState::Level { percent, .. } => format!("{}: {percent}%", status.name),
-        BatteryState::Offline => format!("{}: off", status.name),
     }
 }
 

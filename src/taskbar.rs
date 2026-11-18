@@ -14,6 +14,7 @@ use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows_sys::Win32::UI::Controls::*;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -36,6 +37,8 @@ pub struct Bitmap {
     pub width: i32,
     pub height: i32,
     pub pixels: Vec<u32>,
+    /// Horizontal extent `(left, right)` of each device, for hover tooltips.
+    pub regions: Vec<(i32, i32)>,
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -120,11 +123,13 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
 
         // Lay the runs out left to right.
         let mut runs = Vec::new();
+        let mut regions = Vec::new();
         let mut x = pad;
         for (i, status) in statuses.iter().enumerate() {
             if i > 0 {
                 x += device_gap;
             }
+            let device_left = x - device_gap / 2;
             let (color, opacity) = style(&status.state, light);
             for (text, icon) in [
                 (glyph(status.kind).to_string(), true),
@@ -145,6 +150,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
                 });
                 x += size.cx + if icon { icon_gap } else { 0 };
             }
+            regions.push((device_left, x + device_gap / 2));
         }
         let width = if statuses.is_empty() { 0 } else { x + pad };
         if width == 0 || height <= 0 {
@@ -156,6 +162,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
                 width: 0,
                 height: 0,
                 pixels: Vec::new(),
+                regions: Vec::new(),
             };
         }
 
@@ -193,6 +200,15 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
             }
         }
 
+        // A layered window only receives the mouse where alpha is non-zero.
+        // Keep the whole strip barely opaque so hovering anywhere over a
+        // device shows its tooltip, not only on the strokes of the text.
+        for p in &mut pixels {
+            if *p >> 24 == 0 {
+                *p = 0x0100_0000;
+            }
+        }
+
         SelectObject(dc, old_bitmap);
         SelectObject(dc, old_font);
         DeleteObject(dib);
@@ -203,6 +219,7 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
             width,
             height,
             pixels,
+            regions,
         }
     }
 }
@@ -274,6 +291,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 
 pub struct Widget {
     hwnd: HWND,
+    /// Tooltip control owned by `hwnd`; rebuilt whenever the content changes.
+    tooltip: HWND,
+    /// What is currently drawn, to skip redundant redraws.
+    shown: Option<(Vec<DeviceStatus>, bool)>,
 }
 
 impl Default for Widget {
@@ -284,7 +305,11 @@ impl Default for Widget {
 
 impl Widget {
     pub fn new() -> Self {
-        Widget { hwnd: null_mut() }
+        Widget {
+            hwnd: null_mut(),
+            tooltip: null_mut(),
+            shown: None,
+        }
     }
 
     /// Redraws the widget. Returns `false` when it cannot be shown (no
@@ -310,15 +335,26 @@ impl Widget {
                 }
             }
 
+            let light = light_taskbar();
+            if embedded
+                && self
+                    .shown
+                    .as_ref()
+                    .is_some_and(|(s, l)| s == statuses && *l == light)
+            {
+                return true;
+            }
+
             let bar_rect = rect_of(bar);
             let bitmap = render(
                 statuses,
                 bar_rect.bottom - bar_rect.top,
                 GetDpiForWindow(bar),
-                light_taskbar(),
+                light,
             );
             if bitmap.width == 0 {
                 ShowWindow(self.hwnd, SW_HIDE);
+                self.shown = None;
                 return true;
             }
             if !present(self.hwnd, &bitmap) {
@@ -331,6 +367,12 @@ impl Widget {
             }
             reposition(self.hwnd);
             ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+
+            if !self.tooltip.is_null() {
+                DestroyWindow(self.tooltip);
+            }
+            self.tooltip = create_tooltip(self.hwnd, statuses, &bitmap, light);
+            self.shown = Some((statuses.to_vec(), light));
         }
         true
     }
@@ -342,9 +384,12 @@ impl Widget {
 
     pub fn hide(&mut self) {
         if !self.hwnd.is_null() {
+            // Destroying the widget also destroys the tooltip it owns.
             unsafe { DestroyWindow(self.hwnd) };
             self.hwnd = null_mut();
         }
+        self.tooltip = null_mut();
+        self.shown = None;
     }
 }
 
@@ -390,6 +435,63 @@ unsafe fn create_window(bar: HWND) -> HWND {
         }
         SetTimer(hwnd, REPOSITION_TIMER, REPOSITION_MS, None);
         hwnd
+    }
+}
+
+/// Creates a tooltip control with one hover area per device.
+unsafe fn create_tooltip(
+    owner: HWND,
+    statuses: &[DeviceStatus],
+    bitmap: &Bitmap,
+    light: bool,
+) -> HWND {
+    unsafe {
+        let icc = INITCOMMONCONTROLSEX {
+            dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
+            dwICC: ICC_BAR_CLASSES,
+        };
+        InitCommonControlsEx(&icc);
+
+        let instance = GetModuleHandleW(null());
+        let tooltip = CreateWindowExW(
+            WS_EX_TOPMOST,
+            wide("tooltips_class32").as_ptr(),
+            null(),
+            WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            owner,
+            null_mut(),
+            instance,
+            null(),
+        );
+        if tooltip.is_null() {
+            crate::log!("widget: tooltip creation failed, error {}", GetLastError());
+            return tooltip;
+        }
+        if !light {
+            SetWindowTheme(tooltip, wide("DarkMode_Explorer").as_ptr(), null());
+        }
+        for (i, (status, &(left, right))) in statuses.iter().zip(&bitmap.regions).enumerate() {
+            let mut text = wide(&status.summary());
+            let mut tool: TTTOOLINFOW = std::mem::zeroed();
+            tool.cbSize = size_of::<TTTOOLINFOW>() as u32;
+            tool.uFlags = TTF_SUBCLASS;
+            tool.hwnd = owner;
+            tool.uId = i;
+            tool.rect = RECT {
+                left,
+                top: 0,
+                right,
+                bottom: bitmap.height,
+            };
+            tool.hinst = instance;
+            tool.lpszText = text.as_mut_ptr();
+            SendMessageW(tooltip, TTM_ADDTOOLW, 0, &tool as *const _ as LPARAM);
+        }
+        tooltip
     }
 }
 

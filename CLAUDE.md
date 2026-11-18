@@ -36,6 +36,9 @@ Use the `probe` example to debug device communication. Stop a running
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
+- `build.rs`: embeds the application manifest (Common Controls v6 for themed
+  tooltips, per-monitor DPI awareness). It applies to the binary only, so
+  examples get classic-style tooltips.
 - `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
 - `src/icon.rs`: tray icons rendered to RGBA with a built-in 5x7 font.
 - `src/main.rs`: winit event loop, tray icons, menu, background poll thread.

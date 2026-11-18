@@ -14,7 +14,8 @@ level, for example `30%`. The text follows the taskbar theme and turns red at
 20% or less, green while charging, and dims to a dash when the receiver is
 plugged in but the device is off or out of range.
 
-A TrayJuice icon in the tray shows all levels on hover. Right-click it for:
+Hover a device on the taskbar to see its name. A TrayJuice icon in the tray
+shows all levels on hover. Right-click it for:
 
 - **Show in taskbar**: turn the taskbar widget on or off. When it is off,
   every device gets its own tray icon with the level as a number on a

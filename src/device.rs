@@ -28,6 +28,20 @@ pub struct DeviceStatus {
     pub state: BatteryState,
 }
 
+impl DeviceStatus {
+    /// One line for tooltips, e.g. `Logitech PRO X Wireless: 30%`.
+    pub fn summary(&self) -> String {
+        match self.state {
+            BatteryState::Level {
+                percent,
+                charging: true,
+            } => format!("{}: {percent}% (charging)", self.name),
+            BatteryState::Level { percent, .. } => format!("{}: {percent}%", self.name),
+            BatteryState::Offline => format!("{}: off", self.name),
+        }
+    }
+}
+
 /// A family of devices that knows how to find its members and read their battery.
 pub trait BatterySource: Send {
     /// Poll every supported device currently plugged in.
