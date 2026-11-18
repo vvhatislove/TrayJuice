@@ -43,10 +43,12 @@ struct App {
 impl App {
     fn show(&mut self) {
         let wanted = self.widget_item.is_checked();
+        trayjuice::log!("show: widget wanted={wanted}, statuses={:?}", self.statuses);
         if wanted && !self.statuses.is_empty() && self.widget.update(&self.statuses) {
             self.icons.clear();
             self.show_app_icon();
         } else {
+            trayjuice::log!("show: falling back to tray tiles");
             self.widget.hide();
             self.app_icon = None;
             self.show_tiles();
@@ -143,6 +145,9 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, _: WindowEvent) {}
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        if let UserEvent::Menu(e) = &event {
+            trayjuice::log!("menu: {:?}", e.id);
+        }
         match event {
             UserEvent::Statuses(statuses) => {
                 self.statuses = statuses;

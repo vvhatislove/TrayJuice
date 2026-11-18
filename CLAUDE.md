@@ -19,7 +19,14 @@ fallback when the taskbar widget is off or cannot be embedded.
 - `cargo run --example taskbar_probe` shows a magenta block in the taskbar
   for 20 seconds. Use it to check that embedding still works on a Windows build.
 
+- `cargo run --example widget_live` embeds the real widget with sample
+  devices for 30 seconds and reports whether its window stays alive.
+
 The release binary has `windows_subsystem = "windows"`, so it prints nothing.
+Set the `TRAYJUICE_LOG` environment variable to a file path before starting
+it to get a trace of polls, display mode and widget window events
+(`src/log.rs`, `trayjuice::log!`). Logging is the one allowed file write on
+the main thread, and only when that variable is set.
 Use the `probe` example to debug device communication. Stop a running
 `trayjuice.exe` before rebuilding, otherwise the linker cannot replace it.
 
@@ -29,6 +36,7 @@ Use the `probe` example to debug device communication. Stop a running
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
+- `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
 - `src/icon.rs`: tray icons rendered to RGBA with a built-in 5x7 font.
 - `src/main.rs`: winit event loop, tray icons, menu, background poll thread.
 

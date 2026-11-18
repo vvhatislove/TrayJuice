@@ -263,6 +263,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         reposition(hwnd);
         return 0;
     }
+    match msg {
+        WM_CLOSE => crate::log!("widget {hwnd:?}: WM_CLOSE"),
+        WM_DESTROY => crate::log!("widget {hwnd:?}: WM_DESTROY"),
+        WM_SHOWWINDOW => crate::log!("widget {hwnd:?}: WM_SHOWWINDOW show={wp} reason={lp}"),
+        _ => {}
+    }
     unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
 }
 
@@ -286,6 +292,7 @@ impl Widget {
     pub fn update(&mut self, statuses: &[DeviceStatus]) -> bool {
         let bar = taskbar();
         if bar.is_null() {
+            crate::log!("widget: taskbar not found");
             self.hide();
             return false;
         }
@@ -297,6 +304,7 @@ impl Widget {
             if !embedded {
                 self.hide();
                 self.hwnd = create_window(bar);
+                crate::log!("widget: created {:?} in taskbar {bar:?}", self.hwnd);
                 if self.hwnd.is_null() {
                     return false;
                 }
@@ -314,6 +322,10 @@ impl Widget {
                 return true;
             }
             if !present(self.hwnd, &bitmap) {
+                crate::log!(
+                    "widget: UpdateLayeredWindow failed, error {}",
+                    GetLastError()
+                );
                 self.hide();
                 return false;
             }
@@ -321,6 +333,11 @@ impl Widget {
             ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
         true
+    }
+
+    /// `true` while the embedded window exists (Explorer may destroy it).
+    pub fn is_alive(&self) -> bool {
+        !self.hwnd.is_null() && unsafe { IsWindow(self.hwnd) } != 0
     }
 
     pub fn hide(&mut self) {

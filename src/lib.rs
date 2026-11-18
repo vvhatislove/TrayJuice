@@ -2,5 +2,6 @@
 
 pub mod device;
 pub mod icon;
+pub mod log;
 pub mod logitech;
 pub mod taskbar;
