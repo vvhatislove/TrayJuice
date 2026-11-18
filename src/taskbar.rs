@@ -94,10 +94,15 @@ fn glyph(kind: DeviceKind) -> char {
     }
 }
 
-fn label(state: &BatteryState) -> String {
+/// Lightning bolt; the same code point in both icon fonts.
+const CHARGING_GLYPH: char = '\u{e945}';
+
+/// Text next to the device glyph, and whether it is drawn with the icon font.
+fn label(state: &BatteryState) -> (String, bool) {
     match *state {
-        BatteryState::Level { percent, .. } => format!("{percent}%"),
-        BatteryState::Offline => "\u{2013}".into(),
+        BatteryState::Level { percent, .. } => (format!("{percent}%"), false),
+        BatteryState::Charging => (CHARGING_GLYPH.to_string(), true),
+        BatteryState::Offline => ("\u{2013}".into(), false),
     }
 }
 
@@ -106,7 +111,7 @@ fn style(state: &BatteryState, light: bool) -> (Rgb, u32) {
     let normal = if light { BLACK } else { WHITE };
     match *state {
         BatteryState::Offline => (normal, 110),
-        BatteryState::Level { charging: true, .. } => {
+        BatteryState::Charging | BatteryState::Level { charging: true, .. } => {
             (if light { GREEN_ON_LIGHT } else { GREEN_ON_DARK }, 255)
         }
         BatteryState::Level { percent, .. } if percent <= 20 => {
@@ -177,16 +182,22 @@ pub fn render(statuses: &[DeviceStatus], height: i32, dpi: u32, light: bool) -> 
             }
             let device_left = x - device_gap / 2;
             let (color, opacity) = style(&status.state, light);
-            for (text, icon) in [
-                (glyph(status.kind).to_string(), true),
-                (label(&status.state), false),
+            let (label, label_is_icon) = label(&status.state);
+            let label_font = match (label_is_icon, fluent) {
+                (true, true) => icon_font,
+                (true, false) => mdl2_font,
+                (false, _) => text_font,
+            };
+            let device_font = if fluent && !uses_mdl2(status.kind) {
+                icon_font
+            } else {
+                mdl2_font
+            };
+            for (text, font, icon) in [
+                (glyph(status.kind).to_string(), device_font, true),
+                (label, label_font, false),
             ] {
                 let text: Vec<u16> = text.encode_utf16().collect();
-                let font = match (icon, fluent && !uses_mdl2(status.kind)) {
-                    (true, true) => icon_font,
-                    (true, false) => mdl2_font,
-                    (false, _) => text_font,
-                };
                 SelectObject(dc, font);
                 let mut size = SIZE { cx: 0, cy: 0 };
                 GetTextExtentPoint32W(dc, text.as_ptr(), text.len() as i32, &mut size);

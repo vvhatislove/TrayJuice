@@ -7,6 +7,8 @@ use hidapi::HidApi;
 pub enum BatteryState {
     /// Device is reachable and reported a level.
     Level { percent: u8, charging: bool },
+    /// On the charger, and the device gives no usable level while it charges.
+    Charging,
     /// Receiver is plugged in, but the device itself is off or out of range.
     Offline,
 }
@@ -37,6 +39,7 @@ impl DeviceStatus {
                 charging: true,
             } => format!("{}: {percent}% (charging)", self.name),
             BatteryState::Level { percent, .. } => format!("{}: {percent}%", self.name),
+            BatteryState::Charging => format!("{}: charging", self.name),
             BatteryState::Offline => format!("{}: off", self.name),
         }
     }

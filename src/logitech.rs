@@ -128,14 +128,37 @@ fn read_battery(dev: &HidDevice, model: &Model) -> Option<BatteryState> {
             model.name,
             buf[6]
         );
-        if mv < model.min_mv {
-            return None;
-        }
-        return Some(BatteryState::Level {
-            percent: percent_from_voltage(model.curve, mv),
-            charging: buf[6] == 0x03,
-        });
+        return state_from_reply(model, mv, buf[6]);
     }
+}
+
+/// Charge state byte of the reply while the headset is on the charger.
+const STATE_CHARGING: u8 = 0x03;
+
+/// Turns the voltage and charge state of a reply into a battery state.
+///
+/// The polynomial describes a discharging battery. On the charger the
+/// headset reports the voltage under charge current, which is far higher
+/// than at rest, so no level is derived from it. Observed on a PRO X
+/// Wireless: 3658 mV (21 %) jumped to 3978 mV on plugging in, which the
+/// polynomial reads as 87 %; after 70 minutes 4183 mV dropped to 3889 mV
+/// (71 %) on unplugging and was at 3830 mV (57 %) half an hour later, with
+/// the headset in use meanwhile. HeadsetControl applies the
+/// polynomial while charging as well and gets the same inflated number.
+///
+/// Only states `0x01` (discharging) and `0x03` (charging) were observed;
+/// what a fully charged headset on the charger reports is not known.
+fn state_from_reply(model: &Model, mv: u16, state: u8) -> Option<BatteryState> {
+    if mv < model.min_mv {
+        return None;
+    }
+    if state == STATE_CHARGING {
+        return Some(BatteryState::Charging);
+    }
+    Some(BatteryState::Level {
+        percent: percent_from_voltage(model.curve, mv),
+        charging: false,
+    })
 }
 
 #[cfg(test)]
@@ -148,5 +171,25 @@ mod tests {
         assert_eq!(percent_from_voltage(GPRO_CURVE, 3900), 73);
         assert_eq!(percent_from_voltage(GPRO_CURVE, 4200), 100);
         assert_eq!(percent_from_voltage(GPRO_CURVE, 3300), 0);
+    }
+
+    #[test]
+    fn no_level_from_the_voltage_under_charge() {
+        let model = &MODELS[0];
+        let level = |percent| {
+            Some(BatteryState::Level {
+                percent,
+                charging: false,
+            })
+        };
+        assert_eq!(state_from_reply(model, 3692, 0x01), level(27));
+        // The same headset a minute later, now on the charger.
+        assert_eq!(
+            state_from_reply(model, 3978, 0x03),
+            Some(BatteryState::Charging)
+        );
+        // Below `min_mv` the headset counts as off, whatever the state byte.
+        assert_eq!(state_from_reply(model, 0, 0x01), None);
+        assert_eq!(state_from_reply(model, 0, 0x03), None);
     }
 }

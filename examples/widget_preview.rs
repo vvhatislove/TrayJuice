@@ -18,6 +18,7 @@ fn main() {
         device(DeviceKind::Mouse, level(93, false)),
         device(DeviceKind::Keyboard, level(100, true)),
         device(DeviceKind::Gamepad, level(16, false)),
+        device(DeviceKind::Headset, BatteryState::Charging),
         device(DeviceKind::Other, BatteryState::Offline),
     ];
 

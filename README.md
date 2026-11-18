@@ -37,6 +37,8 @@ Levels refresh once a minute.
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.
 - The "Show in taskbar" choice is not saved between runs.
+- A Logitech headset on the charger shows a lightning bolt and no level (see
+  "Supported devices" for why).
 
 ## Supported devices
 
@@ -52,6 +54,13 @@ Levels refresh once a minute.
 Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve. On a PRO X Wireless it matched G HUB
 exactly at the one point compared (27%).
+
+While a Logitech headset is on the charger, the widget shows a lightning bolt
+instead of a number. The voltage it reports under charge is about 0.3 V above
+the resting value, and the discharge curve turns that into a level far too
+high (21% read as 87% on a PRO X Wireless). After unplugging, the number
+still runs high while the voltage settles: 71% at first, 57% half an hour
+later in the one cycle that was logged.
 
 Mice on the `1d57` receiver are read by listening only; TrayJuice sends
 nothing to them. What was seen with a Delux M800:
