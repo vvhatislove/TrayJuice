@@ -38,17 +38,17 @@ fn main() {
     };
 
     // Count identical reports instead of flooding the console.
-    let mut seen: BTreeMap<Vec<u8>, (usize, f32)> = BTreeMap::new();
+    let mut seen: BTreeMap<Vec<u8>, (usize, f32, f32)> = BTreeMap::new();
     let start = Instant::now();
     let mut buf = [0u8; 64];
     while start.elapsed() < Duration::from_secs(seconds) {
         match dev.read_timeout(&mut buf, 250) {
             Ok(0) => {}
             Ok(n) => {
-                let entry = seen
-                    .entry(buf[..n].to_vec())
-                    .or_insert((0, start.elapsed().as_secs_f32()));
+                let now = start.elapsed().as_secs_f32();
+                let entry = seen.entry(buf[..n].to_vec()).or_insert((0, now, now));
                 entry.0 += 1;
+                entry.2 = now;
             }
             Err(e) => {
                 println!("read error: {e}");
@@ -59,8 +59,11 @@ fn main() {
     if seen.is_empty() {
         println!("no reports in {seconds} s");
     }
-    for (report, (count, first)) in seen {
+    for (report, (count, first, last)) in seen {
         let bytes: Vec<String> = report.iter().map(|b| format!("{b:02x}")).collect();
-        println!("{count:>5}x first at {first:>5.2}s: {}", bytes.join(" "));
+        println!(
+            "{count:>5}x between {first:>6.2}s and {last:>6.2}s: {}",
+            bytes.join(" ")
+        );
     }
 }

@@ -274,6 +274,36 @@ fn reposition(hwnd: HWND) {
     }
 }
 
+/// Puts the tooltip just above the taskbar, centred on the cursor.
+///
+/// The tooltip is not owned by the taskbar, so the taskbar would cover it at
+/// its default position below the cursor.
+fn place_tooltip(widget: HWND, tooltip: HWND) {
+    unsafe {
+        let bar = GetAncestor(widget, GA_PARENT);
+        if bar.is_null() {
+            return;
+        }
+        let (bar_rect, tip) = (rect_of(bar), rect_of(tooltip));
+        let (width, height) = (tip.right - tip.left, tip.bottom - tip.top);
+        let gap = 8 * GetDpiForWindow(bar) as i32 / 96;
+        let mut cursor = POINT { x: 0, y: 0 };
+        GetCursorPos(&mut cursor);
+        let x = (cursor.x - width / 2)
+            .clamp(bar_rect.left, (bar_rect.right - width).max(bar_rect.left));
+        let y = bar_rect.top - height - gap;
+        SetWindowPos(
+            tooltip,
+            HWND_TOPMOST,
+            x,
+            y,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     // This window lives inside Explorer's taskbar: never block here.
     if msg == WM_TIMER && wp == REPOSITION_TIMER {
@@ -282,6 +312,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
     }
     if msg == WM_MOUSEACTIVATE {
         return MA_NOACTIVATE as LRESULT;
+    }
+    if msg == WM_NOTIFY {
+        let header = unsafe { &*(lp as *const NMHDR) };
+        if header.code == TTN_SHOW {
+            place_tooltip(hwnd, header.hwndFrom);
+            return 1; // the tooltip keeps the position we just set
+        }
     }
     match msg {
         WM_CLOSE => crate::log!("widget {hwnd:?}: WM_CLOSE"),

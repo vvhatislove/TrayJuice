@@ -38,7 +38,8 @@ Use the `probe` example to debug device communication. Stop a running
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
-  Listen-only: the receiver pushes battery reports by itself.
+  Listen-only on its own thread: reports are rare (on wake, or when the
+  vendor app asks), so the collection stays open and the last level is kept.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
@@ -84,13 +85,17 @@ Use the `probe` example to debug device communication. Stop a running
   sleeps, no long loops in the window procedure or event handlers.
 - Never restart or kill `explorer.exe` to test or fix something unless the
   maintainer agrees first.
+- Nothing we create may be owned by a window inside the taskbar: a topmost
+  popup owned by `Shell_TrayWnd` keeps the taskbar above fullscreen apps.
+  The tooltip is unowned and placed above the taskbar on `TTN_SHOW`.
 - Use system fonts ("Segoe Fluent Icons" for glyphs, "Segoe UI" for text) and
   follow the taskbar theme. Scale every pixel size by the taskbar DPI.
 
 ### Threads
 
-- All HID access happens on the poll thread; all window, tray and menu calls
-  happen on the main thread. They talk through `EventLoopProxy` and an mpsc
+- All HID access happens on the poll thread or on a backend's own listener
+  thread (`src/delux.rs`); all window, tray and menu calls happen on the main
+  thread. They talk through `EventLoopProxy` and an mpsc
   channel.
 
 ### Verifying changes
