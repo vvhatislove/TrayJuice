@@ -15,13 +15,11 @@ level, for example `30%`. The text follows the taskbar theme and turns red at
 plugged in but the device is off or out of range.
 
 Hover a device on the taskbar to see its name in a tooltip above the
-taskbar. A TrayJuice icon in the tray
-shows all levels on hover. Right-click it for:
+taskbar. The tray holds a single TrayJuice icon that lists all levels on
+hover. Right-click it for:
 
 - **Show in taskbar**: turn the taskbar widget on or off. When it is off,
-  every device gets its own tray icon with the level as a number on a
-  coloured tile (green above 50%, amber 21–50%, red 20% or less, blue while
-  charging, grey when off).
+  the levels are still in the tray icon's tooltip.
 - **Refresh now** and **Quit TrayJuice**.
 
 Levels refresh once a minute.
@@ -30,8 +28,8 @@ Levels refresh once a minute.
 
 - The taskbar widget relies on embedding a window into the taskbar, which
   Windows has no public API for. It was built on Windows 11 build 26200 at
-  100% scaling and may stop working after a Windows update; the tray tiles
-  keep working in that case.
+  100% scaling and may stop working after a Windows update; the levels stay
+  available in the tray icon's tooltip in that case.
 - With many open apps the widget can overlap taskbar buttons next to the
   notification area.
 - Other display scales, the light theme, vertical or secondary taskbars and
@@ -94,9 +92,8 @@ shortcut to it into the folder that `shell:startup` opens.
 4. Add the device to the table above, marked as tested only if you ran it on
    real hardware.
 
-`cargo run --example widget_preview` and `cargo run --example icon_preview`
-write BMP images of the taskbar widget and the tray tiles for a range of
-states, which helps when changing the rendering.
+`cargo run --example widget_preview` writes a BMP image of the taskbar widget
+for a range of states, which helps when changing the rendering.
 
 ## Credits
 

@@ -2,20 +2,19 @@
 
 Windows app in Rust that shows battery levels of wireless peripherals on the
 taskbar: a device glyph and a percentage per device, left of the notification
-area. A tray icon carries the menu, and number tiles in the tray are the
-fallback when the taskbar widget is off or cannot be embedded.
+area. A single tray icon carries the menu and a tooltip with every level,
+which is also the fallback when the taskbar widget is off or cannot be
+embedded. The maintainer does not want per-device icons in the tray.
 
 ## Commands
 
 - `cargo build --release` builds `target\release\trayjuice.exe`.
-- `cargo test` runs the unit tests (voltage curve, icon rendering).
+- `cargo test` runs the unit tests (curves, report parsing, icon).
 - `cargo fmt` and `cargo clippy --all-targets` must be clean before a commit.
 - `cargo run --example probe` prints HID interfaces and battery readings to
   the console. Add `-- all` to list every vendor, not only Logitech.
 - `cargo run --example widget_preview` writes `widget_preview.bmp`: the
   taskbar widget for sample devices on a dark and a light background.
-- `cargo run --example icon_preview` writes `icon_preview.bmp` with enlarged
-  tray tiles for many states.
 - `cargo run --example taskbar_probe` shows a magenta block in the taskbar
   for 20 seconds. Use it to check that embedding still works on a Windows build.
 
@@ -49,7 +48,7 @@ Use the `probe` example to debug device communication. Stop a running
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
   examples get classic-style tooltips.
 - `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
-- `src/icon.rs`: tray icons rendered to RGBA with a built-in 5x7 font.
+- `src/icon.rs`: the app's tray icon, drawn in code.
 - `src/main.rs`: winit event loop, tray icons, menu, background poll thread.
 
 ## Rules
@@ -90,7 +89,7 @@ Use the `probe` example to debug device communication. Stop a running
 - Embedding a window into `Shell_TrayWnd` is undocumented. All of that code,
   and all `unsafe` for it, stays in `src/taskbar.rs`.
 - The app must stay usable when embedding fails: `Widget::update` returns
-  `false` and `main.rs` falls back to tray tiles. Keep that path working.
+  `false` and the levels stay in the tray icon's tooltip. Keep that working.
 - The widget window lives inside Explorer and shares its input queue. The
   main thread must never block: no HID access, no file or network I/O, no
   sleeps, no long loops in the window procedure or event handlers.
@@ -112,7 +111,7 @@ Use the `probe` example to debug device communication. Stop a running
 ### Verifying changes
 
 - A running process proves nothing about what is on screen. For any visual
-  change, look at `widget_preview.bmp` or `icon_preview.bmp`, and check the
+  change, look at `widget_preview.bmp`, and check the
   real taskbar with a screen capture of the taskbar strip. If a fullscreen
   app hides the taskbar, report the result as unverified.
 - Say plainly what was checked on hardware and what was not (device off,
