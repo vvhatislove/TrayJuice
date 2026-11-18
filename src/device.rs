@@ -51,7 +51,10 @@ pub trait BatterySource: Send {
 
 /// All backends compiled into this build.
 pub fn all_sources() -> Vec<Box<dyn BatterySource>> {
-    vec![Box::new(crate::logitech::LogitechHeadsets)]
+    vec![
+        Box::new(crate::logitech::LogitechHeadsets),
+        Box::new(crate::delux::DeluxMice::default()),
+    ]
 }
 
 /// Piecewise-linear interpolation over a discharge curve.

@@ -44,8 +44,16 @@ Levels refresh once a minute.
 | Logitech PRO X Wireless (`046d:0aba`) | USB receiver | tested |
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
 
+| Delux M800 (receiver `1d57:fa60`, model byte `3a`) | USB receiver | tested |
+| Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
+
 Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve and can differ from G HUB by a few percent.
+
+Mice on the `1d57:fa60` receiver announce their level themselves every couple
+of seconds; TrayJuice only listens and sends nothing to them. A sleeping
+mouse is silent, so its last level stays on screen for 15 minutes before it
+is shown as off. Charging state is not reported for these mice.
 
 Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).
@@ -78,8 +86,11 @@ states, which helps when changing the rendering.
 
 ## Credits
 
-The Logitech battery protocol and discharge curve follow
-[HeadsetControl](https://github.com/Sapd/HeadsetControl).
+Protocol facts come from other open projects; no code was copied from them.
+
+- Logitech headsets: [HeadsetControl](https://github.com/Sapd/HeadsetControl).
+- Delux and Attack Shark mice:
+  [OpenMouse mouse-protocol](https://github.com/OpenMouse-Project/mouse-protocol).
 
 ## License
 

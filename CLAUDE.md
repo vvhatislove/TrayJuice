@@ -19,6 +19,8 @@ fallback when the taskbar widget is off or cannot be embedded.
 - `cargo run --example taskbar_probe` shows a magenta block in the taskbar
   for 20 seconds. Use it to check that embedding still works on a Windows build.
 
+- `cargo run --example hid_listen -- <vid> <pid> <usage_page> <usage>`
+  passively prints input reports of one HID collection (sends nothing).
 - `cargo run --example widget_live` embeds the real widget with sample
   devices for 30 seconds and reports whether its window stays alive.
 
@@ -35,6 +37,8 @@ Use the `probe` example to debug device communication. Stop a running
 - `src/device.rs`: `BatteryState`, `DeviceKind`, `DeviceStatus`, the
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
+- `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
+  Listen-only: the receiver pushes battery reports by itself.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
@@ -51,9 +55,12 @@ Use the `probe` example to debug device communication. Stop a running
   registered in `all_sources()`. Keep vendor specifics out of `main.rs`.
 - Take protocol bytes from a primary source (HeadsetControl, Solaar, vendor
   docs) and link it in the module doc comment. Do not guess them.
-- HeadsetControl and Solaar are GPL. Read them for protocol facts only
+- HeadsetControl and Solaar are GPL, OpenMouse is AGPL. Read them for protocol facts only
   (request bytes, response layout, calibration points). Never copy or
   translate their code into this MIT project.
+- Prefer listening to reports the device sends by itself over asking for
+  them. Some receivers (the `1d57` family) can freeze the radio link when
+  written to.
 - Only send read-only requests to devices. No writes that change settings,
   firmware or pairing.
 - Only talk to interfaces matched by exact vendor ID, product ID, usage page
@@ -63,7 +70,8 @@ Use the `probe` example to debug device communication. Stop a running
 - Do not poll more often than once every 30 seconds per device, apart from a
   refresh the user asked for. Polling wakes the radio and drains the battery.
 - Mark a device as "tested" in `README.md` only after running it on real
-  hardware. The only device verified so far is the PRO X Wireless `046d:0aba`.
+  hardware. Verified so far: PRO X Wireless `046d:0aba` and Delux M800 on
+  the `1d57:fa60` receiver.
 
 ### Taskbar widget
 
