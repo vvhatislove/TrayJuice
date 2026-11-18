@@ -1,20 +1,23 @@
 //! Delux / Attack Shark mice on the shared `1d57:fa60` 2.4 GHz receiver.
 //!
 //! The receiver forwards the battery level as a 5-byte input report
-//! `03 <model> 40 <state> <percent>` on the `0x0A/0x00` collection. The mouse
-//! sends it when it wakes up and whenever the vendor app asks, not on a fixed
-//! schedule, so a short listening window once a minute misses it. This
-//! backend therefore keeps the collection open on its own thread and
-//! remembers the last report. It never writes to the device.
+//! `03 <model> 40 <state> <percent>` on the `0x0A/0x00` collection. This
+//! backend only listens and never writes to the device.
+//!
+//! Two constraints shape it:
+//! - The Delux M800 sends the report only while the vendor app asks for it
+//!   (about every 2 seconds while its window is open), so most polls hear
+//!   nothing and the last level has to be remembered.
+//! - The vendor app shows "No Device" while another process keeps this
+//!   collection open, so it must be opened only for a short window per poll
+//!   and never held.
 //!
 //! Protocol facts come from:
 //! - OpenMouse, <https://github.com/OpenMouse-Project/mouse-protocol>
 //!   (`docs/delux-m600-pro-testing.md`, `src/delux/index.ts`);
 //! - mouse-battery-tray, <https://github.com/incconutwo/mouse-battery-tray>
-//!   (`battery_tray.pyw`: charging states, passive listening).
+//!   (`battery_tray.pyw`: charging states).
 
-use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use hidapi::HidApi;
@@ -26,10 +29,9 @@ const RECEIVER: u16 = 0xfa60;
 const USAGE_PAGE: u16 = 0x000a;
 const USAGE: u16 = 0x0000;
 
-/// How long to wait before looking for the receiver again.
-const RETRY: Duration = Duration::from_secs(5);
-/// Upper bound for one blocking read, so an unplugged receiver is noticed.
-const READ_TIMEOUT_MS: i32 = 5000;
+/// Listening window per poll. Long enough to catch one report while the
+/// vendor app is asking, short enough not to lock the app out for long.
+const LISTEN: Duration = Duration::from_millis(2500);
 /// Reports are rare, so the last level stays valid for a long time.
 const REMEMBER: Duration = Duration::from_secs(2 * 60 * 60);
 
@@ -71,41 +73,42 @@ fn parse_report(report: &[u8]) -> Option<Reading> {
 }
 
 #[derive(Default)]
-struct Shared {
-    /// The receiver is plugged in and its battery collection is open.
-    present: bool,
+pub struct DeluxMice {
     last: Option<(Reading, Instant)>,
 }
 
-#[derive(Default)]
-pub struct DeluxMice {
-    shared: Arc<Mutex<Shared>>,
-    listening: bool,
-}
-
 impl BatterySource for DeluxMice {
-    fn poll(&mut self, _api: &HidApi) -> Vec<DeviceStatus> {
-        if !self.listening {
-            self.listening = true;
-            let shared = Arc::clone(&self.shared);
-            thread::spawn(move || listen(&shared));
-            // Give the listener a moment to find the receiver, so the mouse
-            // is already part of the very first result.
-            for _ in 0..20 {
-                thread::sleep(Duration::from_millis(50));
-                if self.shared.lock().is_ok_and(|s| s.present) {
-                    break;
-                }
-            }
-        }
-
-        let Ok(shared) = self.shared.lock() else {
+    fn poll(&mut self, api: &HidApi) -> Vec<DeviceStatus> {
+        let Some(info) = api.device_list().find(|d| {
+            d.vendor_id() == VENDOR
+                && d.product_id() == RECEIVER
+                && d.usage_page() == USAGE_PAGE
+                && d.usage() == USAGE
+        }) else {
+            self.last = None;
             return Vec::new();
         };
-        if !shared.present {
-            return Vec::new();
+
+        // The handle is dropped at the end of this block, see the module docs.
+        let heard = info.open_device(api).ok().and_then(|device| {
+            let deadline = Instant::now() + LISTEN;
+            let mut buf = [0u8; 16];
+            loop {
+                let left = deadline.checked_duration_since(Instant::now())?;
+                let n = device
+                    .read_timeout(&mut buf, left.as_millis() as i32)
+                    .ok()?;
+                if let Some(reading) = parse_report(&buf[..n]) {
+                    return Some(reading);
+                }
+            }
+        });
+        if let Some(reading) = heard {
+            crate::log!("delux: {reading:?}");
+            self.last = Some((reading, Instant::now()));
         }
-        let (name, state) = match shared.last {
+
+        let (name, state) = match self.last {
             Some((reading, seen)) if seen.elapsed() < REMEMBER => (
                 model_name(reading.model),
                 BatteryState::Level {
@@ -121,50 +124,6 @@ impl BatterySource for DeluxMice {
             kind: DeviceKind::Mouse,
             state,
         }]
-    }
-}
-
-/// Runs for the lifetime of the process: waits for the receiver, then blocks
-/// on its battery collection and records every report.
-fn listen(shared: &Mutex<Shared>) {
-    let mut api = HidApi::new().ok();
-    loop {
-        let device = api.as_mut().and_then(|api| {
-            api.refresh_devices().ok()?;
-            let info = api.device_list().find(|d| {
-                d.vendor_id() == VENDOR
-                    && d.product_id() == RECEIVER
-                    && d.usage_page() == USAGE_PAGE
-                    && d.usage() == USAGE
-            })?;
-            info.open_device(api).ok()
-        });
-        if api.is_none() {
-            api = HidApi::new().ok();
-        }
-
-        if let Some(device) = device {
-            crate::log!("delux: listening on the receiver");
-            if let Ok(mut shared) = shared.lock() {
-                shared.present = true;
-            }
-            let mut buf = [0u8; 16];
-            // Ends with a read error when the receiver is unplugged.
-            while let Ok(n) = device.read_timeout(&mut buf, READ_TIMEOUT_MS) {
-                if let Some(reading) = parse_report(&buf[..n]) {
-                    crate::log!("delux: {reading:?}");
-                    if let Ok(mut shared) = shared.lock() {
-                        shared.last = Some((reading, Instant::now()));
-                    }
-                }
-            }
-            crate::log!("delux: receiver lost");
-        }
-
-        if let Ok(mut shared) = shared.lock() {
-            shared.present = false;
-        }
-        thread::sleep(RETRY);
     }
 }
 

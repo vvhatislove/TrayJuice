@@ -51,10 +51,10 @@ Logitech headsets report battery voltage, not a percentage, so the number is
 an estimate from a discharge curve and can differ from G HUB by a few percent.
 
 Mice on the `1d57:fa60` receiver are read by listening only; TrayJuice sends
-nothing to them. The Delux M800 reports its level rarely: seen so far only
-while the vendor app window is open. Until the first report arrives after
-TrayJuice starts, the mouse is shown with a dash; after that the last level
-is kept for two hours.
+nothing to them. The Delux M800 reports its level only while the vendor app
+window is open, so that is when TrayJuice can pick it up. Until the first
+report arrives after TrayJuice starts, the mouse is shown with a dash; after
+that the last level is kept for two hours.
 
 Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).

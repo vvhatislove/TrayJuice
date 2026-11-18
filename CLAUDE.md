@@ -38,8 +38,7 @@ Use the `probe` example to debug device communication. Stop a running
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
-  Listen-only on its own thread: reports are rare (on wake, or when the
-  vendor app asks), so the collection stays open and the last level is kept.
+  Listen-only, in a short window per poll; the last level is remembered.
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
@@ -62,6 +61,9 @@ Use the `probe` example to debug device communication. Stop a running
 - Prefer listening to reports the device sends by itself over asking for
   them. Some receivers (the `1d57` family) can freeze the radio link when
   written to.
+- Never keep a device handle open between polls. Vendor apps can lose the
+  device while we hold it: the Delux app shows "No Device" when the
+  receiver's battery collection is open elsewhere. Open, read, close.
 - Only send read-only requests to devices. No writes that change settings,
   firmware or pairing.
 - Only talk to interfaces matched by exact vendor ID, product ID, usage page
@@ -93,9 +95,8 @@ Use the `probe` example to debug device communication. Stop a running
 
 ### Threads
 
-- All HID access happens on the poll thread or on a backend's own listener
-  thread (`src/delux.rs`); all window, tray and menu calls happen on the main
-  thread. They talk through `EventLoopProxy` and an mpsc
+- All HID access happens on the poll thread; all window, tray and menu calls
+  happen on the main thread. They talk through `EventLoopProxy` and an mpsc
   channel.
 
 ### Verifying changes
