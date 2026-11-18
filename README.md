@@ -56,16 +56,15 @@ exactly at the one point compared (27%).
 Mice on the `1d57` receiver are read by listening only; TrayJuice sends
 nothing to them. What was seen with a Delux M800:
 
-- While the mouse reports its level, a report arrives every 2 seconds. So
-  far reports were heard only while the Delux app was running or for a few
-  minutes after it was closed. Why they stop is not known yet.
+- The mouse reports its level every 2 seconds, but the reports stop for
+  good (until the receiver is replugged) once no program keeps the receiver
+  open. TrayJuice therefore keeps it open for as long as it runs. The Delux
+  app depends on the same reports and shows "No Device" when they stop.
+- If the mouse shows a dash, replug the receiver.
 - When no report arrives, the last level is kept for 10 minutes and the
   tooltip says how old it is; after that the mouse is shown with a dash.
 - The receiver has been seen with two product IDs, `fa60` and `fa7d`. All
   tests were done with `fa60`.
-- TrayJuice opens the receiver's battery channel for 2.5 seconds per poll.
-  An earlier build kept it open all the time, and the Delux app then showed
-  "No Device" until the receiver was replugged.
 
 Xbox controllers are read through XInput, which only tells four levels. They
 are shown as rough numbers: full 100%, medium 60%, low 25%, empty 5%, with

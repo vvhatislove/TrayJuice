@@ -4,18 +4,21 @@
 //! `03 <model> 40 <state> <percent>` on the `0x0A/0x00` collection. This
 //! backend only listens and never writes to the device.
 //!
-//! What was observed with a Delux M800 (listening tests and one USB capture):
+//! What was observed with a Delux M800 (listening tests and USB captures):
 //! - While the reports flow, one arrives about every 2 seconds.
-//! - They were heard only while the vendor app was running or within a few
-//!   minutes after it was closed, and stopped later every time (three times).
-//!   A 45-second USB capture showed the app sending nothing but string
-//!   descriptor reads, so what keeps the reports going is still unknown.
-//! - Because of that the last level is remembered for a while and its age
-//!   is put into the device name.
-//! - Once, after an earlier build had kept this collection open for minutes,
-//!   the vendor app showed "No Device" until the receiver was replugged.
-//!   Whether that was the cause is unproven, but the collection is opened
-//!   only for a short window per poll.
+//! - The vendor app sends nothing to the mouse (two USB captures, 45 s and
+//!   5 min). It finds the mouse through these same reports and shows
+//!   "No Device" when they stop.
+//! - The reports stopped three times, each time while no program kept the
+//!   receiver open (vendor app closed, TrayJuice opening it only for a short
+//!   window per poll), and came back only after a replug or reboot. With the
+//!   vendor app running they never stopped.
+//! - Working theory, not proven: Windows idles the receiver's interface once
+//!   its last handle is closed, and the receiver does not resume the reports
+//!   afterwards. This backend therefore keeps its handle open for as long as
+//!   the receiver is plugged in. With that change the reports kept coming
+//!   for 9 minutes after the vendor app was closed (10 polls out of 10);
+//!   before it they had stopped within 1 to 4 minutes.
 //!
 //! Protocol facts come from:
 //! - OpenMouse, <https://github.com/OpenMouse-Project/mouse-protocol>
@@ -25,7 +28,7 @@
 
 use std::time::{Duration, Instant};
 
-use hidapi::HidApi;
+use hidapi::{HidApi, HidDevice};
 
 use crate::device::{BatterySource, BatteryState, DeviceKind, DeviceStatus};
 
@@ -38,7 +41,8 @@ const RECEIVERS: [u16; 2] = [0xfa60, 0xfa7d];
 const USAGE_PAGE: u16 = 0x000a;
 const USAGE: u16 = 0x0000;
 
-/// Listening window per poll: a bit longer than the 2 seconds between reports.
+/// How long one poll waits for a report when none is queued: a bit longer
+/// than the 2 seconds between reports.
 const LISTEN: Duration = Duration::from_millis(2500);
 /// How long the last level is still shown after the reports stop. After
 /// that the mouse counts as off.
@@ -83,7 +87,37 @@ fn parse_report(report: &[u8]) -> Option<Reading> {
 
 #[derive(Default)]
 pub struct DeluxMice {
+    /// Kept open between polls on purpose, see the module docs.
+    device: Option<HidDevice>,
     last: Option<(Reading, Instant)>,
+}
+
+impl DeluxMice {
+    /// Returns the newest report: first whatever Windows queued since the
+    /// last poll, otherwise the next one to arrive within [`LISTEN`].
+    /// `Err` means the handle is dead (receiver unplugged).
+    fn listen(device: &HidDevice) -> Result<Option<Reading>, ()> {
+        let mut buf = [0u8; 16];
+        let mut newest = None;
+        loop {
+            match device.read_timeout(&mut buf, 0) {
+                Ok(0) => break,
+                Ok(n) => newest = parse_report(&buf[..n]).or(newest),
+                Err(_) => return Err(()),
+            }
+        }
+        let deadline = Instant::now() + LISTEN;
+        while newest.is_none() {
+            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+            let n = device
+                .read_timeout(&mut buf, left.as_millis() as i32)
+                .map_err(|_| ())?;
+            newest = parse_report(&buf[..n]);
+        }
+        Ok(newest)
+    }
 }
 
 impl BatterySource for DeluxMice {
@@ -94,27 +128,24 @@ impl BatterySource for DeluxMice {
                 && d.usage_page() == USAGE_PAGE
                 && d.usage() == USAGE
         }) else {
+            self.device = None;
             self.last = None;
             return Vec::new();
         };
 
-        // The handle is dropped at the end of this block, see the module docs.
-        let heard = info.open_device(api).ok().and_then(|device| {
-            let deadline = Instant::now() + LISTEN;
-            let mut buf = [0u8; 16];
-            loop {
-                let left = deadline.checked_duration_since(Instant::now())?;
-                let n = device
-                    .read_timeout(&mut buf, left.as_millis() as i32)
-                    .ok()?;
-                if let Some(reading) = parse_report(&buf[..n]) {
-                    return Some(reading);
-                }
+        if self.device.is_none() {
+            self.device = info.open_device(api).ok();
+            crate::log!("delux: opened receiver: {}", self.device.is_some());
+        }
+        match self.device.as_ref().map(Self::listen) {
+            Some(Ok(Some(reading))) => {
+                crate::log!("delux: {reading:?}");
+                self.last = Some((reading, Instant::now()));
             }
-        });
-        if let Some(reading) = heard {
-            crate::log!("delux: {reading:?}");
-            self.last = Some((reading, Instant::now()));
+            Some(Ok(None)) => crate::log!("delux: no report"),
+            // Reopen on the next poll.
+            Some(Err(())) => self.device = None,
+            None => {}
         }
 
         let (name, state) = match self.last {

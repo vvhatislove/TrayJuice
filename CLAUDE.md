@@ -39,9 +39,9 @@ Use the `probe` example to debug device communication. Stop a running
   `BatterySource` trait, `all_sources()`, voltage-to-percent interpolation.
 - `src/logitech.rs`: Logitech HID++ headsets behind a USB receiver.
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
-  Listen-only, in a short window per poll; the last level is remembered for
-  10 minutes. Reports were heard only while the Delux app ran or shortly
-  after; what keeps them going is unknown (see the module docs).
+  Listen-only. Keeps its handle open while the receiver is plugged in,
+  because the battery reports stop for good once nothing holds the receiver
+  open (see the module docs). The last level is remembered for 10 minutes.
 - `src/xbox.rs`: Xbox / XInput gamepads through `XInputGetBatteryInformation`
   (four coarse levels, nothing for a controller on a cable).
 - `src/taskbar.rs`: the taskbar widget (window embedding, GDI text rendering).
@@ -71,9 +71,10 @@ Use the `probe` example to debug device communication. Stop a running
   a second apart (OpenMouse measurements). Never read feature report `0x10`:
   it can put the mouse into bootloader mode. Any write to this receiver
   needs the maintainer's go-ahead first.
-- Never keep a device handle open between polls: open, read, close. After
-  a build that held the Delux receiver's battery collection open, the Delux
-  app showed "No Device" until a replug (cause not proven).
+- Close device handles between polls unless a backend documents why it must
+  not. `src/delux.rs` is the exception: closing the last handle of the
+  `1d57` receiver stops its battery reports until a replug. The Delux app
+  showing "No Device" is that same symptom, not a conflict with us.
 - Write down only what was observed. When a cause is a guess, say so in the
   code comment and in `README.md`; several confident explanations of the
   Delux battery stream turned out wrong.
