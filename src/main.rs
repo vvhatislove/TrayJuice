@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use hidapi::HidApi;
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use trayjuice::alert::{self, LowBattery};
 use trayjuice::device::{DeviceStatus, Waker, all_sources};
@@ -296,7 +296,11 @@ fn main() {
     );
     let update_item = MenuItem::with_id(MENU_UPDATE, Offer::Idle.label(), true, None);
     let menu = Menu::new();
+    // The first line only names the version; it cannot be clicked.
+    let title = format!("TrayJuice {}", update::text(update::current()));
     menu.append_items(&[
+        &MenuItem::new(title, false, None),
+        &PredefinedMenuItem::separator(),
         &widget_item,
         &alerts_item,
         &autostart_item,

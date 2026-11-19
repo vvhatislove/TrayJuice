@@ -83,22 +83,27 @@ function TjSetEvent(Event: THandle): BOOL;
 function TjCloseHandle(Handle: THandle): BOOL;
   external 'CloseHandle@kernel32.dll stdcall';
 
-// Asks a running copy to quit the way its own menu item does. Versions
-// before 0.1.2 do not listen and have to be closed by hand.
-procedure AskToQuit();
+// Asks a running copy to quit the way its own menu item does. Returns
+// False when nothing listens: versions before 0.1.2 have to be closed by
+// hand.
+function AskToQuit(): Boolean;
 var
   Event: THandle;
 begin
   Event := TjOpenEvent(EVENT_MODIFY_STATE, False, QuitEventName);
-  if Event <> 0 then
+  Result := Event <> 0;
+  if Result then
   begin
     TjSetEvent(Event);
     TjCloseHandle(Event);
   end;
 end;
 
-// Closes a running copy: asks it to quit, waits up to 10 seconds, then
-// asks the user. With message boxes suppressed the answer is "cancel".
+// Closes a running copy: asks it to quit and gives it up to 3 seconds,
+// then asks the user. With message boxes suppressed the answer is
+// "cancel". The wait is short and only made for a copy that listens: the
+// wizard's window does not respond during it (a 10 second wait made the
+// installer look hung).
 function CloseRunningCopy(): Boolean;
 var
   I: Integer;
@@ -107,12 +112,14 @@ begin
   if not CheckForMutexes(AppMutexName) then
     Exit;
   WasRunning := True;
-  AskToQuit();
-  for I := 1 to 50 do
+  if AskToQuit() then
   begin
-    if not CheckForMutexes(AppMutexName) then
-      Exit;
-    Sleep(200);
+    for I := 1 to 30 do
+    begin
+      if not CheckForMutexes(AppMutexName) then
+        Exit;
+      Sleep(100);
+    end;
   end;
   while CheckForMutexes(AppMutexName) do
   begin

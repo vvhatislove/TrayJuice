@@ -42,7 +42,8 @@ plugged in but the device is off or out of range.
 
 Hover a device on the taskbar to see its name in a tooltip above the
 taskbar. Clicks go through the widget to the taskbar underneath. The tray holds a single TrayJuice icon that lists all levels on
-hover. Right-click it for:
+hover. Right-click it for a menu. Its first line names the version; below
+it:
 
 - **Show in taskbar**: turn the taskbar widget on or off. When it is off,
   the levels are still in the tray icon's tooltip.
