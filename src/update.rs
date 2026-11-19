@@ -237,10 +237,10 @@ pub fn check() -> Offer {
     }
 }
 
-/// Downloads the installer of `version` into the temp folder. `None` when
-/// the release has no installer or the download fails.
-pub fn download_installer(version: Version) -> Option<PathBuf> {
-    let (_session, _connection, request) = get(&installer_request(version), true)?;
+/// Downloads a file from `github.com`, following the redirect to where
+/// GitHub keeps release files. `None` unless the answer is a plain 200.
+fn fetch(path: &str) -> Option<Vec<u8>> {
+    let (_session, _connection, request) = get(path, true)?;
     if status_code(&request)? != 200 {
         return None;
     }
@@ -267,6 +267,13 @@ pub fn download_installer(version: Version) -> Option<PathBuf> {
             return None;
         }
     }
+    Some(data)
+}
+
+/// Downloads the installer of `version` into the temp folder. `None` when
+/// the release has no installer or the download fails.
+pub fn download_installer(version: Version) -> Option<PathBuf> {
+    let data = fetch(&installer_request(version))?;
     // A Windows executable, not an error page.
     if !data.starts_with(b"MZ") {
         return None;
@@ -412,6 +419,24 @@ mod tests {
             release_page([0, 1, 2]),
             "https://github.com/vvhatislove/TrayJuice/releases/tag/v0.1.2"
         );
+    }
+
+    /// Uses the network, so it only runs when asked for:
+    /// `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "uses the network"]
+    fn downloads_a_release_file() {
+        let zip = fetch(&format!(
+            "{REPO}/releases/download/v0.1.1/TrayJuice-0.1.1-windows-x64.zip"
+        ))
+        .expect("the 0.1.1 archive downloads");
+        assert!(zip.starts_with(b"PK"));
+        assert!(zip.len() > 100_000);
+        assert_eq!(
+            fetch(&format!("{REPO}/releases/download/v0.1.1/nothing")),
+            None
+        );
+        assert!(matches!(check(), Offer::UpToDate | Offer::Available { .. }));
     }
 
     #[test]
