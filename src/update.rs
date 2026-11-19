@@ -38,7 +38,7 @@ const HOST: &str = "github.com";
 const REPO: &str = "/vvhatislove/TrayJuice";
 const USER_AGENT: &str = "TrayJuice";
 const TIMEOUT_MS: i32 = 15_000;
-/// An installer is under a megabyte; anything near this size is not ours.
+/// The 0.1.2 installer is 2.4 MB; anything near this size is not ours.
 const MAX_DOWNLOAD: usize = 32 * 1024 * 1024;
 /// Start of the name of the folders downloads are kept in, under the temp
 /// folder.
