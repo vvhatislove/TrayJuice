@@ -101,7 +101,10 @@ impl ApplicationHandler<UserEvent> for App {
 
 /// Polls all devices every [`POLL_INTERVAL`], or sooner when `refresh` fires.
 fn poll_loop(proxy: EventLoopProxy<UserEvent>, refresh: mpsc::Receiver<()>, wake: Waker) {
-    let mut sources = all_sources(wake);
+    // Read on the poll thread, once, at start.
+    let unproven = std::env::var_os("TRAYJUICE_HIDPP").is_some();
+    trayjuice::log!("unproven backends: {unproven}");
+    let mut sources = all_sources(wake, unproven);
     let mut api = HidApi::new().ok();
     loop {
         let statuses = match api.as_mut() {

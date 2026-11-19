@@ -50,7 +50,8 @@ pub fn report(all_vendors: bool) -> String {
     }
 
     out.push_str("\nBattery:\n");
-    let mut sources = all_sources(Arc::new(|| {}));
+    // The report is how an unproven backend gets its first run on hardware.
+    let mut sources = all_sources(Arc::new(|| {}), true);
     for source in &mut sources {
         source.poll(&api);
     }

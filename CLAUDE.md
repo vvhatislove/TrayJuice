@@ -46,6 +46,13 @@ Use the `probe` example to debug device communication. Stop a running
   its charging cable changes and asks for a poll. On the charger the level
   comes from a separate charging curve, not from the discharge one. The
   `0aba` curves are reduced from the power model G HUB installs.
+- `src/hidpp.rs`: Logitech mice and keyboards with HID++ 2.0 behind a
+  Unifying, Bolt or Lightspeed receiver, after Solaar. Written without
+  hardware and never run on it. The table lists receivers, not devices:
+  each paired device is asked which battery feature it has. Handles are
+  closed between polls; nothing is asked of the receiver itself. It runs
+  only in the probe report and, in the app, when `TRAYJUICE_HIDPP` is set
+  (`all_sources(wake, unproven)`).
 - `src/delux.rs`: Delux / Attack Shark mice on the `1d57:fa60` receiver.
   Listen-only. A listener thread keeps its handle open while the receiver
   is plugged in, because the battery reports stop for good once nothing
@@ -102,6 +109,11 @@ Use the `probe` example to debug device communication. Stop a running
   firmware or pairing.
 - Only talk to interfaces matched by exact vendor ID, product ID, usage page
   and usage. Never send bytes to a device that is not in a model table.
+  For `src/hidpp.rs` the table is one of receivers: the devices paired to
+  them get the standard HID++ 2.0 feature lookup and battery requests only.
+- A backend that was never run on hardware stays behind the `unproven`
+  flag of `all_sources`. Turn it on for everyone only after a probe report
+  from real hardware shows it reading the right level.
 - Other software (G HUB) shares the same receiver. Match replies by header,
   read in a loop with a deadline, and treat silence as `Offline`, never panic.
 - Do not poll more often than once every 30 seconds per device, apart from a

@@ -58,13 +58,19 @@ pub trait BatterySource: Send {
 /// thread when a device announces a change by itself.
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
 
-/// All backends compiled into this build.
-pub fn all_sources(wake: Waker) -> Vec<Box<dyn BatterySource>> {
-    vec![
+/// All backends compiled into this build. `unproven` adds those that were
+/// never run on hardware: the probe report always has them, the app only
+/// when the `TRAYJUICE_HIDPP` environment variable is set.
+pub fn all_sources(wake: Waker, unproven: bool) -> Vec<Box<dyn BatterySource>> {
+    let mut sources: Vec<Box<dyn BatterySource>> = vec![
         Box::new(crate::logitech::LogitechHeadsets::new(wake.clone())),
         Box::new(crate::delux::DeluxMice::new(wake)),
         Box::new(crate::xbox::XboxControllers),
-    ]
+    ];
+    if unproven {
+        sources.insert(1, Box::new(crate::hidpp::LogitechReceivers::new()));
+    }
+    sources
 }
 
 /// Evaluates a discharge polynomial: `terms[i]` multiplies `mv^i`.

@@ -62,6 +62,10 @@ disappears or reports a change by itself.
 - The "Show in taskbar" choice is not saved between runs.
 - "Start with Windows" stores the path of the executable. After moving the
   file, tick the menu item again.
+- Logitech mice and keyboards on a Unifying, Bolt or Lightspeed receiver
+  were never tried on hardware and are off unless `TRAYJUICE_HIDPP` is
+  set; only those that report a percentage are read (see "Supported
+  devices").
 - A PRO X Wireless that was already past about 87% on the charger when
   TrayJuice started reads too low until it is unplugged (see "Supported
   devices"). The other Logitech models show no number while charging.
@@ -72,6 +76,7 @@ disappears or reports a change by itself.
 |---|---|---|
 | Logitech PRO X Wireless (`046d:0aba`) | USB receiver | tested |
 | Logitech PRO X Wireless (`046d:0aaa`), G PRO (`046d:0aa7`), PRO X 2 (`046d:0afb`, `046d:0afc`) | USB receiver | same protocol, untested |
+| Logitech mice and keyboards with HID++ 2.0 on a Unifying (`046d:c52b`, `c532`), Bolt (`c548`) or Lightspeed (`c539`, `c53a`, `c53d`, `c53f`, `c541`, `c545`, `c547`, `c54d`) receiver | USB receiver | never run on hardware, off by default (see below) |
 | Delux M800 (receiver `1d57:fa60` or `fa7d`, model byte `3a`) | USB receiver | tested on `fa60`, with limits (see below) |
 | Delux M600 Pro, Attack Shark X11 (same `1d57:fa60` receiver) | USB receiver | same protocol, untested |
 | Xbox controllers and other XInput gamepads | Xbox Wireless Adapter | tested, four rough levels (see below) |
@@ -100,6 +105,32 @@ or pulled, and TrayJuice listens for that, so the widget follows the cable
 within a second or two. Other models were not checked; without the
 announcement the change shows up at the next regular poll.
 
+Logitech mice and keyboards behind a Unifying, Bolt or Lightspeed receiver
+are asked for their level the way Solaar does it. This part was written
+from Solaar's sources without a receiver to try it on, so it may not work
+at all, and it is switched off in the app until someone confirms it. If
+you have such a receiver:
+
+- Run `trayjuice.exe --probe`, which always includes this part, and attach
+  the report to a [device request](#asking-for-a-device), with the level
+  Logi Options+ or G HUB shows next to it.
+- To see the devices on the taskbar, set the environment variable
+  `TRAYJUICE_HIDPP` to any value before starting TrayJuice.
+
+What to expect if it works:
+
+- Only devices that report a percentage are shown (HID++ features `0x1004`
+  and `0x1000`). Going by the device listings in Solaar's documentation
+  that covers the MX, M and K series, the G304/G305, G604, G613, G502 X
+  Plus and G515. Devices that report a voltage instead do not
+  appear: G Pro Wireless, G502 Lightspeed, G703, G903, G915. Neither do
+  older ones that only speak HID++ 1.0 (M510, M570, K520, K800).
+- A device appears once it has answered. One that is off or asleep when
+  TrayJuice starts is missing until then; afterwards it is shown with a dash
+  while it does not answer.
+- The level and the charging state change at the regular poll, not at once.
+- Devices connected by Bluetooth or by cable are not read.
+
 A Delux M800 on its charging cable stays on the receiver and keeps reporting
 its level, now with a charging flag. Its reports come every 2 seconds and
 are read as they arrive, so the mouse follows the cable just as quickly.
@@ -124,7 +155,7 @@ battery level; it is shown in green with a lightning bolt instead of a
 number. XInput does not tell whether the cable is charging anything, so the
 bolt also shows for a controller with AA cells on a cable.
 
-Other Bluetooth devices and other vendors are not supported yet. Adding one means
+Bluetooth devices and other vendors are not supported yet. Adding one means
 implementing a single trait, see [Adding a device](#adding-a-device).
 
 ## Build from source
@@ -188,6 +219,9 @@ Protocol facts come from other open projects; no code was copied from them.
 - Logitech headsets: [HeadsetControl](https://github.com/Sapd/HeadsetControl).
   The battery curves of the PRO X Wireless are a reduction of the power
   model shipped with Logitech G HUB.
+- Logitech mice and keyboards: [Solaar](https://github.com/pwr-Solaar/Solaar)
+  for the HID++ requests, and the Linux kernel's `hid-logitech-dj.c` for the
+  layout of the receiver's HID++ collections.
 - Delux and Attack Shark mice:
   [OpenMouse mouse-protocol](https://github.com/OpenMouse-Project/mouse-protocol)
   and [mouse-battery-tray](https://github.com/incconutwo/mouse-battery-tray).
