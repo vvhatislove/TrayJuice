@@ -39,10 +39,16 @@ hover. Right-click it for:
 
 - **Show in taskbar**: turn the taskbar widget on or off. When it is off,
   the levels are still in the tray icon's tooltip.
+- **Low battery alerts**: a Windows notification when a device drops to
+  20% and again at 10%. A device is announced once per threshold until it
+  has been charged or has risen back to 25%.
 - **Start with Windows**: start TrayJuice when you sign in. It adds one
   value to the current user's `Run` registry key and removes it when
   unticked.
 - **Refresh now** and **Quit TrayJuice**.
+
+The first two choices are remembered in the registry under
+`HKCU\Software\TrayJuice`.
 
 Levels refresh once a minute, and at once when a device appears or
 disappears or reports a change by itself.
@@ -59,7 +65,11 @@ disappears or reports a change by itself.
 - Other display scales, the light theme, vertical or secondary taskbars and
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.
-- The "Show in taskbar" choice is not saved between runs.
+- Low battery alerts are ordinary Windows notifications: Do Not Disturb
+  and fullscreen apps hold them back, and Windows decides how they look.
+  This was not seen on screen yet, only accepted by Windows.
+- An Xbox controller reports "low" as 25%, above the first threshold, so
+  its only alert comes when it reports "empty".
 - "Start with Windows" stores the path of the executable. After moving the
   file, tick the menu item again.
 - Logitech mice and keyboards on a Unifying, Bolt or Lightspeed receiver

@@ -8,8 +8,11 @@ use std::time::Duration;
 use hidapi::HidApi;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use trayjuice::alert::{self, LowBattery};
 use trayjuice::device::{DeviceStatus, Waker, all_sources};
 use trayjuice::icon;
+use trayjuice::notify::Notifier;
+use trayjuice::settings::{self, Setting};
 use trayjuice::taskbar::Widget;
 use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
 use windows_sys::Win32::System::Threading::CreateMutexW;
@@ -24,6 +27,7 @@ const MENU_REFRESH: &str = "refresh";
 const MENU_QUIT: &str = "quit";
 const MENU_WIDGET: &str = "widget";
 const MENU_AUTOSTART: &str = "autostart";
+const MENU_ALERTS: &str = "alerts";
 
 enum UserEvent {
     Statuses(Vec<DeviceStatus>),
@@ -36,6 +40,9 @@ struct App {
     widget: Widget,
     widget_item: CheckMenuItem,
     autostart_item: CheckMenuItem,
+    alerts_item: CheckMenuItem,
+    low_battery: LowBattery,
+    notifier: Notifier,
     /// Latest poll result, kept so the widget can be rebuilt when toggled.
     statuses: Vec<DeviceStatus>,
     refresh: mpsc::Sender<()>,
@@ -60,6 +67,28 @@ impl App {
             self.widget.hide();
         }
     }
+
+    /// Tells about devices that have just become low. The state is kept up
+    /// to date even while alerts are off, so turning them on does not bring
+    /// up old news.
+    fn alert(&mut self) {
+        let Some(text) = self.low_battery.check(&self.statuses) else {
+            return;
+        };
+        if self.alerts_item.is_checked() {
+            let shown = self.notifier.show(alert::TITLE, &text);
+            trayjuice::log!("alert: {text:?}, shown={shown}");
+        }
+    }
+}
+
+/// Stores a menu choice. Off the main thread: it shares its input queue
+/// with Explorer.
+fn save(setting: Setting, on: bool) {
+    thread::spawn(move || {
+        let done = settings::set(setting, on);
+        trayjuice::log!("settings: {setting:?}={on}, done={done}");
+    });
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -75,9 +104,18 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Statuses(statuses) => {
                 self.statuses = statuses;
                 self.show();
+                self.alert();
             }
             // The check mark has already been toggled by the menu itself.
-            UserEvent::Menu(e) if e.id.as_ref() == MENU_WIDGET => self.show(),
+            // Only a choice made here is stored, not a widget that could
+            // not be embedded.
+            UserEvent::Menu(e) if e.id.as_ref() == MENU_WIDGET => {
+                save(Setting::ShowInTaskbar, self.widget_item.is_checked());
+                self.show();
+            }
+            UserEvent::Menu(e) if e.id.as_ref() == MENU_ALERTS => {
+                save(Setting::LowBatteryAlerts, self.alerts_item.is_checked());
+            }
             UserEvent::Menu(e) if e.id.as_ref() == MENU_AUTOSTART => {
                 // Off the main thread: it shares its input queue with Explorer.
                 let wanted = self.autostart_item.is_checked();
@@ -169,7 +207,20 @@ fn main() {
         let _ = menu_proxy.send_event(UserEvent::Menu(e));
     }));
 
-    let widget_item = CheckMenuItem::with_id(MENU_WIDGET, "Show in taskbar", true, true, None);
+    let widget_item = CheckMenuItem::with_id(
+        MENU_WIDGET,
+        "Show in taskbar",
+        true,
+        settings::get(Setting::ShowInTaskbar),
+        None,
+    );
+    let alerts_item = CheckMenuItem::with_id(
+        MENU_ALERTS,
+        "Low battery alerts",
+        true,
+        settings::get(Setting::LowBatteryAlerts),
+        None,
+    );
     let autostart_item = CheckMenuItem::with_id(
         MENU_AUTOSTART,
         "Start with Windows",
@@ -180,6 +231,7 @@ fn main() {
     let menu = Menu::new();
     menu.append_items(&[
         &widget_item,
+        &alerts_item,
         &autostart_item,
         &MenuItem::with_id(MENU_REFRESH, "Refresh now", true, None),
         &MenuItem::with_id(MENU_QUIT, "Quit TrayJuice", true, None),
@@ -213,8 +265,12 @@ fn main() {
         .build()
         .expect("failed to create tray icon");
 
+    let notifier = Notifier::new(tray.window_handle());
     let mut app = App {
         tray,
+        alerts_item,
+        low_battery: LowBattery::new(),
+        notifier,
         widget: Widget::new(),
         widget_item,
         autostart_item,

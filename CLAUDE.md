@@ -26,6 +26,8 @@ embedded. The maintainer does not want per-device icons in the tray.
   passively prints input reports of one HID collection (sends nothing).
 - `cargo run --example delux_query` listens on the Delux receiver and sends
   one harmless `GET_FEATURE 0xA0`; add `listen-only` to send nothing.
+- `cargo run --example alert_preview` shows a sample low-battery
+  notification on a tray icon of its own for 10 seconds.
 - `cargo run --example widget_live` embeds the real widget with sample
   devices for 30 seconds and reports whether its window stays alive.
 
@@ -68,6 +70,14 @@ Use the `probe` example to debug device communication. Stop a running
 - `build.rs`: embeds the application manifest (Common Controls v6 for themed
   tooltips, per-monitor DPI awareness). It applies to the binary only, so
   examples get classic-style tooltips.
+- `src/settings.rs`: menu choices kept as DWORD values under
+  `HKCU\Software\TrayJuice` (a missing value means on). Read once at
+  start, written on a spawned thread, and only from a menu click.
+- `src/alert.rs`: decides when a device has become low (20% and 10%,
+  once each, forgotten at 25% or on the charger). Pure logic.
+- `src/notify.rs`: shows the notification as a balloon on the app's own
+  tray icon. It finds the icon number `tray-icon` registered by trying the
+  first few; recheck it when that crate is updated.
 - `src/autostart.rs`: the "Start with Windows" menu item, a value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - `src/probe.rs`: the device report behind the `probe` example and
