@@ -54,7 +54,8 @@ it:
   value to the current user's `Run` registry key and removes it when
   unticked.
 - **Check for updates**: asks GitHub whether a newer release exists and
-  shows the answer in the menu item itself. If there is one, a second click
+  shows the answer in the menu item itself for half a minute. If there is
+  one, a second click
   downloads its installer and runs it; for a copy from the zip or a
   package manager it opens the release page instead. This click is the
   only time TrayJuice uses the network.

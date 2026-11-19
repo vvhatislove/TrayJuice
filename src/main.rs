@@ -30,12 +30,16 @@ const MENU_WIDGET: &str = "widget";
 const MENU_AUTOSTART: &str = "autostart";
 const MENU_ALERTS: &str = "alerts";
 const MENU_UPDATE: &str = "update";
+/// How long the answer to an update check stays in the menu.
+const ANSWER_SHOWN: Duration = Duration::from_secs(30);
 
 enum UserEvent {
     Statuses(Vec<DeviceStatus>),
     Menu(MenuEvent),
     /// Where "Check for updates" has got to.
     Update(Offer),
+    /// The answer to an update check has been in the menu long enough.
+    AnswerShown,
     /// The installer asks this copy to leave (see `quit_signal`).
     QuitAsked,
 }
@@ -96,6 +100,13 @@ impl App {
         trayjuice::log!("update: {offer:?}");
         self.update_item.set_text(offer.label());
         self.update_item.set_enabled(offer.clickable());
+        if offer.is_passing() {
+            let proxy = self.proxy.clone();
+            thread::spawn(move || {
+                thread::sleep(ANSWER_SHOWN);
+                let _ = proxy.send_event(UserEvent::AnswerShown);
+            });
+        }
         self.update = offer;
     }
 
@@ -193,6 +204,9 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::Menu(e) if e.id.as_ref() == MENU_UPDATE => self.update_clicked(),
             UserEvent::Update(offer) => self.set_update(offer),
+            // Only an answer is cleared; an offer to install stays.
+            UserEvent::AnswerShown if self.update.is_passing() => self.set_update(Offer::Idle),
+            UserEvent::AnswerShown => {}
             UserEvent::Menu(e) if e.id.as_ref() == MENU_QUIT => self.quit(event_loop),
             UserEvent::QuitAsked => self.quit(event_loop),
             UserEvent::Menu(e) if e.id.as_ref() == MENU_REFRESH => {

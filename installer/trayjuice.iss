@@ -25,6 +25,7 @@ DefaultDirName={autopf}\TrayJuice
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 LicenseFile=..\LICENSE
+SetupIconFile=..\assets\trayjuice.ico
 UninstallDisplayIcon={app}\trayjuice.exe
 OutputDir=..\dist
 ; The app's "Check for updates" downloads the file by this name.

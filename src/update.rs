@@ -73,7 +73,7 @@ impl Offer {
         match self {
             Offer::Idle => "Check for updates".to_string(),
             Offer::Checking => "Checking for updates...".to_string(),
-            Offer::UpToDate => format!("TrayJuice {} is up to date", text(current())),
+            Offer::UpToDate => "You have the latest version".to_string(),
             Offer::Failed => "Could not check for updates".to_string(),
             Offer::Available {
                 version,
@@ -83,6 +83,13 @@ impl Offer {
             Offer::Downloading => "Downloading the update...".to_string(),
             Offer::Installing => "Installing the update...".to_string(),
         }
+    }
+
+    /// Whether this is only the answer to a check, with nothing to act on.
+    /// Such an answer is shown for a while and then makes way for "Check
+    /// for updates" again.
+    pub fn is_passing(&self) -> bool {
+        matches!(self, Offer::UpToDate | Offer::Failed)
     }
 
     /// Whether a click does anything right now.
@@ -491,7 +498,11 @@ mod tests {
         };
         assert_eq!(offer(true).label(), "Install TrayJuice 0.2.0");
         assert_eq!(offer(false).label(), "Get TrayJuice 0.2.0");
-        assert!(Offer::UpToDate.label().contains(env!("CARGO_PKG_VERSION")));
+        assert_eq!(Offer::UpToDate.label(), "You have the latest version");
+        assert!(Offer::UpToDate.is_passing());
+        assert!(Offer::Failed.is_passing());
+        assert!(!Offer::Idle.is_passing());
+        assert!(!offer(true).is_passing());
         assert!(offer(true).clickable());
         assert!(!Offer::Checking.clickable());
         assert!(!Offer::Downloading.clickable());

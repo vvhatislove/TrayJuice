@@ -26,6 +26,9 @@ embedded. The maintainer does not want per-device icons in the tray.
   passively prints input reports of one HID collection (sends nothing).
 - `cargo run --example delux_query` listens on the Delux receiver and sends
   one harmless `GET_FEATURE 0xA0`; add `listen-only` to send nothing.
+- `cargo run --example make_icon` writes `assets/trayjuice.ico` from the
+  drawing in `src/icon.rs`. Run it and commit the file when that drawing
+  changes: `build.rs` and the installer embed the file, not the code.
 - `cargo run --example alert_preview` shows a sample low-battery
   notification on a tray icon of its own for 10 seconds.
 - `cargo run --example widget_live` embeds the real widget with sample
@@ -94,7 +97,9 @@ Use the `probe` example to debug device communication. Stop a running
   `trayjuice.exe --probe`, which users attach to device requests. It must
   never include serial numbers or device paths.
 - `src/log.rs`: optional debug log enabled by `TRAYJUICE_LOG`.
-- `src/icon.rs`: the app's tray icon, drawn in code.
+- `src/icon.rs`: the app's icon, drawn in code: on a pixel grid below 24
+  pixels, smooth above. `assets/trayjuice.ico` is the same drawing as a
+  file, for the executable and the installer.
 - `src/main.rs`: winit event loop, tray icon, menu, background poll thread,
   single-instance mutex.
 
