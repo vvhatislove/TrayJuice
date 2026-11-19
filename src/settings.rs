@@ -7,10 +7,11 @@
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_DWORD, RRF_RT_REG_DWORD, RegGetValueW, RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_DWORD, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW, RegSetKeyValueW,
 };
 
-const KEY: &str = r"Software\TrayJuice";
+/// The app's own key under `HKEY_CURRENT_USER`.
+pub(crate) const KEY: &str = r"Software\TrayJuice";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Setting {
@@ -29,8 +30,33 @@ impl Setting {
     }
 }
 
-fn wide(s: &str) -> Vec<u16> {
+pub(crate) fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain([0]).collect()
+}
+
+/// Reads a string value from under `HKEY_CURRENT_USER`. `None` when it is
+/// missing, is not a string or does not fit 1023 characters.
+pub(crate) fn read_string(key: &str, value: &str) -> Option<String> {
+    let (key, value) = (wide(key), wide(value));
+    let mut buf = [0u16; 1024];
+    let mut bytes = size_of_val(&buf) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut bytes,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let len = (bytes as usize / 2).min(buf.len());
+    let text = String::from_utf16_lossy(&buf[..len]);
+    Some(text.trim_end_matches('\0').to_string())
 }
 
 /// What a stored value means: only an explicit 0 turns a setting off.

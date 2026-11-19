@@ -36,8 +36,8 @@ enum UserEvent {
     Menu(MenuEvent),
     /// Where "Check for updates" has got to.
     Update(Offer),
-    /// An installer was started and waits for this copy to leave.
-    QuitForUpdate,
+    /// The installer asks this copy to leave (see `quit_signal`).
+    QuitAsked,
 }
 
 struct App {
@@ -104,27 +104,34 @@ impl App {
     fn update_clicked(&mut self) {
         let proxy = self.proxy.clone();
         match self.update.clone() {
-            Offer::Checking | Offer::Downloading => {}
+            Offer::Checking | Offer::Downloading | Offer::Installing => {}
             Offer::Available {
                 version,
                 installed: true,
             } => {
                 self.set_update(Offer::Downloading);
                 thread::spawn(move || {
-                    let started = update::download_installer(version)
-                        .is_some_and(|path| update::run_installer(&path));
-                    trayjuice::log!("update: installer started={started}");
-                    let _ = if started {
-                        proxy.send_event(UserEvent::QuitForUpdate)
-                    } else {
+                    let Some(path) = update::download_installer(version) else {
                         // No installer in that release, or no connection.
-                        update::open_release_page(version);
-                        proxy.send_event(UserEvent::Update(Offer::Idle))
+                        let opened = update::open_release_page(version);
+                        trayjuice::log!("update: no installer, page opened={opened}");
+                        let _ = proxy.send_event(UserEvent::Update(Offer::Idle));
+                        return;
                     };
+                    let _ = proxy.send_event(UserEvent::Update(Offer::Installing));
+                    // The installer closes this copy when it is about to
+                    // replace it. Getting past this line means it ended
+                    // without doing so.
+                    let done = update::run_installer(&path);
+                    trayjuice::log!("update: installer ended, done={done}");
+                    let _ = proxy.send_event(UserEvent::Update(Offer::Idle));
                 });
             }
             Offer::Available { version, .. } => {
-                thread::spawn(move || update::open_release_page(version));
+                thread::spawn(move || {
+                    let opened = update::open_release_page(version);
+                    trayjuice::log!("update: page opened={opened}");
+                });
             }
             Offer::Idle | Offer::UpToDate | Offer::Failed => {
                 self.set_update(Offer::Checking);
@@ -187,7 +194,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Menu(e) if e.id.as_ref() == MENU_UPDATE => self.update_clicked(),
             UserEvent::Update(offer) => self.set_update(offer),
             UserEvent::Menu(e) if e.id.as_ref() == MENU_QUIT => self.quit(event_loop),
-            UserEvent::QuitForUpdate => self.quit(event_loop),
+            UserEvent::QuitAsked => self.quit(event_loop),
             UserEvent::Menu(e) if e.id.as_ref() == MENU_REFRESH => {
                 let _ = self.refresh.send(());
             }
@@ -306,6 +313,11 @@ fn main() {
     let wake: Waker = Arc::new(move || {
         let _ = wake_tx.send(());
     });
+    let quit_proxy = event_loop.create_proxy();
+    let listening = trayjuice::quit_signal::listen(move || {
+        let _ = quit_proxy.send_event(UserEvent::QuitAsked);
+    });
+    trayjuice::log!("quit signal: listening={listening}");
     let watching = trayjuice::hotplug::watch(wake.clone());
     trayjuice::log!("hotplug: watching={watching}");
     thread::spawn(move || poll_loop(poll_proxy, refresh_rx, wake));

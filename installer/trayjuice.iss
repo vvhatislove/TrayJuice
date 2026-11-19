@@ -48,30 +48,67 @@ Name: "{autoprograms}\TrayJuice"; Filename: "{app}\trayjuice.exe"
 
 [Registry]
 ; Tells the app that this copy came from the installer, so that "Check for
-; updates" may run a newer installer over it. Removed with the whole key
-; on uninstall (see [Code]).
+; updates" may run a newer installer over it. Removed on uninstall (see
+; [Code]).
 Root: HKCU; Subkey: "Software\TrayJuice"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"
 
 [Run]
-; After a normal install the user decides; after an update started by the
-; app (silent) it simply comes back.
+; After a normal install the user decides. When a running copy was closed
+; for a silent install (an update started from the app, or a package
+; manager), it simply comes back.
 Filename: "{app}\trayjuice.exe"; Description: "Start TrayJuice"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\trayjuice.exe"; Flags: nowait; Check: WizardSilent
+Filename: "{app}\trayjuice.exe"; Flags: nowait; Check: RestartQuietly
 
 [Code]
 const
-  // The app holds Local\TrayJuice.SingleInstance while it runs; a name
-  // without a prefix is looked up in the same session namespace.
+  // The app holds Local\TrayJuice.SingleInstance while it runs and waits
+  // on the event Local\TrayJuice.Quit (src\quit_signal.rs). A name without
+  // a prefix is looked up in the same session namespace.
   AppMutexName = 'TrayJuice.SingleInstance';
+  QuitEventName = 'TrayJuice.Quit';
+  EVENT_MODIFY_STATE = $0002;
+  RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+  SettingsKey = 'Software\TrayJuice';
 
-// Waits for a copy that is on its way out (the app quits right after it
-// starts an update), then asks the user to quit one that stays.
-function WaitUntilClosed(): Boolean;
+var
+  // A copy was running when the files were about to be replaced.
+  WasRunning: Boolean;
+  // The files were replaced.
+  Installed: Boolean;
+
+function TjOpenEvent(DesiredAccess: DWORD; InheritHandle: BOOL; Name: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function TjSetEvent(Event: THandle): BOOL;
+  external 'SetEvent@kernel32.dll stdcall';
+function TjCloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// Asks a running copy to quit the way its own menu item does. Versions
+// before 0.1.2 do not listen and have to be closed by hand.
+procedure AskToQuit();
+var
+  Event: THandle;
+begin
+  Event := TjOpenEvent(EVENT_MODIFY_STATE, False, QuitEventName);
+  if Event <> 0 then
+  begin
+    TjSetEvent(Event);
+    TjCloseHandle(Event);
+  end;
+end;
+
+// Closes a running copy: asks it to quit, waits up to 10 seconds, then
+// asks the user. With message boxes suppressed the answer is "cancel".
+function CloseRunningCopy(): Boolean;
 var
   I: Integer;
 begin
   Result := True;
-  for I := 1 to 25 do
+  if not CheckForMutexes(AppMutexName) then
+    Exit;
+  WasRunning := True;
+  AskToQuit();
+  for I := 1 to 50 do
   begin
     if not CheckForMutexes(AppMutexName) then
       Exit;
@@ -90,24 +127,69 @@ begin
   end;
 end;
 
-function InitializeSetup(): Boolean;
+// Runs right before the files are replaced, so a wizard that is cancelled
+// earlier leaves the running copy alone.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  Result := WaitUntilClosed();
+  if CloseRunningCopy() then
+    Result := ''
+  else
+    Result := 'TrayJuice is still running. Quit it from its tray icon menu and run the installer again.';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    Installed := True;
+end;
+
+function RestartQuietly(): Boolean;
+begin
+  Result := WasRunning and WizardSilent;
+end;
+
+// A copy that was closed for an install that then failed is started again
+// (the old files are still there), so the user is not left without it.
+procedure DeinitializeSetup();
+var
+  Exe: String;
+  ResultCode: Integer;
+begin
+  if WasRunning and not Installed then
+  begin
+    try
+      Exe := ExpandConstant('{app}\trayjuice.exe');
+      if FileExists(Exe) then
+        Exec(Exe, '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+    except
+    end;
+  end;
 end;
 
 function InitializeUninstall(): Boolean;
 begin
-  Result := WaitUntilClosed();
+  Result := CloseRunningCopy();
 end;
 
-// The app writes these itself, so the installer does not know about them:
-// the "Start with Windows" value and the saved menu choices.
+// The app writes the "Start with Windows" value and the saved menu choices
+// itself, so the installer has to clean them up here. They are left alone
+// when "Start with Windows" points at another copy (from the zip or a
+// package manager): that copy is still in use.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Command: String;
+  OtherCopy: Boolean;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    RegDeleteValue(HKEY_CURRENT_USER,
-      'Software\Microsoft\Windows\CurrentVersion\Run', 'TrayJuice');
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\TrayJuice');
+    OtherCopy := RegQueryStringValue(HKEY_CURRENT_USER, RunKey, 'TrayJuice', Command)
+      and (Pos(Lowercase(ExpandConstant('{app}\')), Lowercase(Command)) = 0);
+    if OtherCopy then
+      RegDeleteValue(HKEY_CURRENT_USER, SettingsKey, 'InstallDir')
+    else
+    begin
+      RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'TrayJuice');
+      RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, SettingsKey);
+    end;
   end;
 end;

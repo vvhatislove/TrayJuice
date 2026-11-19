@@ -11,6 +11,7 @@ pub mod log;
 pub mod logitech;
 pub mod notify;
 pub mod probe;
+pub mod quit_signal;
 pub mod settings;
 pub mod taskbar;
 pub mod update;

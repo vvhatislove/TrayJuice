@@ -1,0 +1,40 @@
+name: Installer
+
+# Compiles the installer when its script changes, and on request. The file
+# is kept for a few days so it can be tried by hand; releases build their
+# own. It is a workflow of its own so that an unrelated push never depends
+# on Inno Setup being available.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - installer/**
+      - .github/workflows/installer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Update Rust
+        run: rustup update stable --no-self-update
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Build the installer
+        shell: pwsh
+        run: installer\build.ps1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: dist/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7

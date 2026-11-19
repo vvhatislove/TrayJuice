@@ -17,8 +17,8 @@
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::Networking::WinHttp::{
     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_DISABLE_REDIRECTS, WINHTTP_FLAG_SECURE,
     WINHTTP_OPTION_DISABLE_FEATURE, WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_QUERY_LOCATION,
@@ -26,9 +26,13 @@ use windows_sys::Win32::Networking::WinHttp::{
     WinHttpQueryHeaders, WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest,
     WinHttpSetOption, WinHttpSetTimeouts,
 };
-use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW};
+use windows_sys::Win32::System::Com::{
+    COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+use crate::settings::{self, wide};
 
 const HOST: &str = "github.com";
 const REPO: &str = "/vvhatislove/TrayJuice";
@@ -36,6 +40,9 @@ const USER_AGENT: &str = "TrayJuice";
 const TIMEOUT_MS: i32 = 15_000;
 /// An installer is under a megabyte; anything near this size is not ours.
 const MAX_DOWNLOAD: usize = 32 * 1024 * 1024;
+/// Start of the name of the folders downloads are kept in, under the temp
+/// folder.
+const DOWNLOAD_DIR: &str = "TrayJuice-update-";
 
 /// Major, minor, patch.
 pub type Version = [u32; 3];
@@ -55,6 +62,9 @@ pub enum Offer {
         installed: bool,
     },
     Downloading,
+    /// The installer runs. It closes this copy when it is ready to replace
+    /// it.
+    Installing,
 }
 
 impl Offer {
@@ -71,12 +81,16 @@ impl Offer {
             } => format!("Install TrayJuice {}", text(*version)),
             Offer::Available { version, .. } => format!("Get TrayJuice {}", text(*version)),
             Offer::Downloading => "Downloading the update...".to_string(),
+            Offer::Installing => "Installing the update...".to_string(),
         }
     }
 
     /// Whether a click does anything right now.
     pub fn clickable(&self) -> bool {
-        !matches!(self, Offer::Checking | Offer::Downloading)
+        !matches!(
+            self,
+            Offer::Checking | Offer::Downloading | Offer::Installing
+        )
     }
 }
 
@@ -124,10 +138,6 @@ fn installer_name(version: Version) -> String {
 fn installer_request(version: Version) -> String {
     let v = text(version);
     format!("{REPO}/releases/download/v{v}/{}", installer_name(version))
-}
-
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain([0]).collect()
 }
 
 /// A WinHTTP handle that is closed when dropped.
@@ -224,6 +234,7 @@ fn location(request: &Handle) -> Option<String> {
 /// Asks GitHub for the latest release and compares it with this build.
 /// Blocks for the length of one request.
 pub fn check() -> Offer {
+    remove_old_downloads();
     let latest = get(&format!("{REPO}/releases/latest"), false)
         .and_then(|(_session, _connection, request)| location(&request))
         .and_then(|location| version_in_location(&location));
@@ -270,33 +281,76 @@ fn fetch(path: &str) -> Option<Vec<u8>> {
     Some(data)
 }
 
-/// Downloads the installer of `version` into the temp folder. `None` when
-/// the release has no installer or the download fails.
+/// Downloads the installer of `version` into a new folder of its own under
+/// the temp folder. `None` when the release has no installer or the
+/// download fails.
 pub fn download_installer(version: Version) -> Option<PathBuf> {
     let data = fetch(&installer_request(version))?;
     // A Windows executable, not an error page.
     if !data.starts_with(b"MZ") {
         return None;
     }
-    let path = std::env::temp_dir().join(installer_name(version));
+    // A folder that did not exist a moment ago: nothing can be waiting in
+    // it under the installer's name.
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    let dir = std::env::temp_dir().join(format!(
+        "{DOWNLOAD_DIR}{}-{}",
+        std::process::id(),
+        stamp.as_nanos()
+    ));
+    std::fs::create_dir(&dir).ok()?;
+    let path = dir.join(installer_name(version));
     std::fs::write(&path, data).ok()?;
     Some(path)
 }
 
-/// Starts a downloaded installer without its questions. It waits for this
-/// app to quit, replaces it and starts it again.
+/// Removes what earlier updates downloaded. An installer that is still
+/// running keeps its file; it goes at the next check.
+fn remove_old_downloads() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if is_download_dir(&entry.file_name().to_string_lossy()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// `TrayJuice-update-<process>-<time>`: digits and one dash after the
+/// prefix, so nothing else in the temp folder is ever removed.
+fn is_download_dir(name: &str) -> bool {
+    name.strip_prefix(DOWNLOAD_DIR)
+        .and_then(|rest| rest.split_once('-'))
+        .is_some_and(|(process, time)| {
+            let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+            digits(process) && digits(time)
+        })
+}
+
+/// Runs a downloaded installer without its questions and waits for it to
+/// end. The installer closes this app right before it replaces the files
+/// (`src/quit_signal.rs`), so this only returns when it gave up before
+/// that: `false` then means "no update happened".
 pub fn run_installer(path: &Path) -> bool {
     std::process::Command::new(path)
         .arg("/SILENT")
-        .spawn()
-        .is_ok()
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
-/// Opens the page of a release in the default browser.
-pub fn open_release_page(version: Version) {
+/// Opens the page of a release in the default browser. Returns `false`
+/// when Windows could not open it.
+pub fn open_release_page(version: Version) -> bool {
     let (verb, url) = (wide("open"), wide(&release_page(version)));
     unsafe {
-        ShellExecuteW(
+        // The shell may hand the address to a handler that needs COM. This
+        // runs on a thread of its own, where nothing has set COM up.
+        let com = CoInitializeEx(
+            std::ptr::null(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+        );
+        let result = ShellExecuteW(
             std::ptr::null_mut(),
             verb.as_ptr(),
             url.as_ptr(),
@@ -304,31 +358,20 @@ pub fn open_release_page(version: Version) {
             std::ptr::null(),
             SW_SHOWNORMAL,
         );
+        if com >= 0 {
+            CoUninitialize();
+        }
+        // Values above 32 mean success.
+        result as usize > 32
     }
 }
 
 /// `true` when this executable sits in the folder the installer recorded
 /// under `HKCU\Software\TrayJuice`.
 fn is_installed() -> bool {
-    let (key, value) = (wide(r"Software\TrayJuice"), wide("InstallDir"));
-    let mut buf = [0u16; 1024];
-    let mut bytes = size_of_val(&buf) as u32;
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            key.as_ptr(),
-            value.as_ptr(),
-            RRF_RT_REG_SZ,
-            std::ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut bytes,
-        )
-    };
-    if status != ERROR_SUCCESS {
+    let Some(recorded) = settings::read_string(settings::KEY, "InstallDir") else {
         return false;
-    }
-    let len = (bytes as usize / 2).min(buf.len());
-    let recorded = String::from_utf16_lossy(&buf[..len]);
+    };
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
@@ -452,6 +495,23 @@ mod tests {
         assert!(offer(true).clickable());
         assert!(!Offer::Checking.clickable());
         assert!(!Offer::Downloading.clickable());
+        assert!(!Offer::Installing.clickable());
+    }
+
+    #[test]
+    fn removes_only_its_own_download_folders() {
+        assert!(is_download_dir("TrayJuice-update-1234-1700000000000000000"));
+        for other in [
+            "TrayJuice-update-",
+            "TrayJuice-update-1234",
+            "TrayJuice-update-1234-",
+            "TrayJuice-update-12a4-17",
+            "TrayJuice-update-1234-17-9",
+            "TrayJuice-0.1.2-setup.exe",
+            "trayjuice-probe.txt",
+        ] {
+            assert!(!is_download_dir(other), "{other:?}");
+        }
     }
 
     #[test]

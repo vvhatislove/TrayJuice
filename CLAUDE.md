@@ -81,8 +81,13 @@ Use the `probe` example to debug device communication. Stop a running
 - `src/update.rs`: the "Check for updates" menu item, the only code that
   uses the network (WinHTTP). See "Footprint and privacy".
 - `installer/trayjuice.iss` and `installer/build.ps1`: the Inno Setup
-  installer. CI compiles it on every push; the release workflow attaches
-  it next to the zip.
+  installer. The `Installer` workflow compiles it when the script changes
+  (or on request) and keeps the file as an artifact; the release workflow
+  attaches it next to the zip.
+- `src/quit_signal.rs`: the event `Local\TrayJuice.Quit`. The installer
+  sets it right before it replaces the files or uninstalls, and the app
+  quits. The names of this event and of the single-instance mutex are
+  also written in `installer/trayjuice.iss`: change them in both places.
 - `src/autostart.rs`: the "Start with Windows" menu item, a value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - `src/probe.rs`: the device report behind the `probe` example and

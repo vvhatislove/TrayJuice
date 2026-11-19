@@ -74,10 +74,17 @@ disappears or reports a change by itself.
 - With many open apps the widget can be drawn over taskbar buttons next to
   the notification area. The buttons stay clickable.
 - Only one copy runs per user session; a second start exits at once.
-- Updating from the tray menu was only tried as far as the check itself.
-  Downloading and running a newer installer cannot be tried before a
-  release that has one exists. The download is protected by HTTPS only:
-  the installer is not signed.
+- Updating from the tray menu was tried as far as the check and the
+  download of a release file. Running a newer installer over a running
+  copy cannot be tried before a release that has one exists. The download
+  is protected by HTTPS only: the installer is not signed.
+- The installer closes a running TrayJuice by itself and starts it again.
+  Versions up to 0.1.1 do not hear that request and have to be quit from
+  the tray menu first.
+- While TrayJuice is closed for an update nothing holds the receiver of a
+  Delux mouse open. If the mouse shows a dash afterwards, replug the
+  receiver (see "Supported devices"). Whether a few seconds are enough to
+  cause this was not tried.
 - Other display scales, the light theme, vertical or secondary taskbars and
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.

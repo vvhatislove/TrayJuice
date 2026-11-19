@@ -6,15 +6,13 @@ use std::path::Path;
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW,
 };
+
+use crate::settings::{read_string, wide};
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const VALUE: &str = "TrayJuice";
-
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain([0]).collect()
-}
 
 /// What Windows runs at sign-in: the path in quotes, so spaces are safe.
 fn command_for(exe: &Path) -> String {
@@ -23,26 +21,7 @@ fn command_for(exe: &Path) -> String {
 
 /// The command stored under the `Run` key, if any.
 fn stored_command() -> Option<String> {
-    let (key, value) = (wide(RUN_KEY), wide(VALUE));
-    let mut buf = [0u16; 1024];
-    let mut bytes = size_of_val(&buf) as u32;
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            key.as_ptr(),
-            value.as_ptr(),
-            RRF_RT_REG_SZ,
-            std::ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut bytes,
-        )
-    };
-    if status != ERROR_SUCCESS {
-        return None;
-    }
-    let len = (bytes as usize / 2).min(buf.len());
-    let text = String::from_utf16_lossy(&buf[..len]);
-    Some(text.trim_end_matches('\0').to_string())
+    read_string(RUN_KEY, VALUE)
 }
 
 /// `true` when Windows is set to start this very executable at sign-in. A
