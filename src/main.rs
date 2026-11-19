@@ -14,6 +14,7 @@ use trayjuice::icon;
 use trayjuice::notify::Notifier;
 use trayjuice::settings::{self, Setting};
 use trayjuice::taskbar::Widget;
+use trayjuice::update::{self, Offer};
 use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
@@ -28,10 +29,15 @@ const MENU_QUIT: &str = "quit";
 const MENU_WIDGET: &str = "widget";
 const MENU_AUTOSTART: &str = "autostart";
 const MENU_ALERTS: &str = "alerts";
+const MENU_UPDATE: &str = "update";
 
 enum UserEvent {
     Statuses(Vec<DeviceStatus>),
     Menu(MenuEvent),
+    /// Where "Check for updates" has got to.
+    Update(Offer),
+    /// An installer was started and waits for this copy to leave.
+    QuitForUpdate,
 }
 
 struct App {
@@ -43,6 +49,9 @@ struct App {
     alerts_item: CheckMenuItem,
     low_battery: LowBattery,
     notifier: Notifier,
+    update_item: MenuItem,
+    update: Offer,
+    proxy: EventLoopProxy<UserEvent>,
     /// Latest poll result, kept so the widget can be rebuilt when toggled.
     statuses: Vec<DeviceStatus>,
     refresh: mpsc::Sender<()>,
@@ -79,6 +88,57 @@ impl App {
             let shown = self.notifier.show(alert::TITLE, &text);
             trayjuice::log!("alert: {text:?}, shown={shown}");
         }
+    }
+}
+
+impl App {
+    fn set_update(&mut self, offer: Offer) {
+        trayjuice::log!("update: {offer:?}");
+        self.update_item.set_text(offer.label());
+        self.update_item.set_enabled(offer.clickable());
+        self.update = offer;
+    }
+
+    /// A click on the update item. The network and the disk are only
+    /// touched on a thread started here, and only because of this click.
+    fn update_clicked(&mut self) {
+        let proxy = self.proxy.clone();
+        match self.update.clone() {
+            Offer::Checking | Offer::Downloading => {}
+            Offer::Available {
+                version,
+                installed: true,
+            } => {
+                self.set_update(Offer::Downloading);
+                thread::spawn(move || {
+                    let started = update::download_installer(version)
+                        .is_some_and(|path| update::run_installer(&path));
+                    trayjuice::log!("update: installer started={started}");
+                    let _ = if started {
+                        proxy.send_event(UserEvent::QuitForUpdate)
+                    } else {
+                        // No installer in that release, or no connection.
+                        update::open_release_page(version);
+                        proxy.send_event(UserEvent::Update(Offer::Idle))
+                    };
+                });
+            }
+            Offer::Available { version, .. } => {
+                thread::spawn(move || update::open_release_page(version));
+            }
+            Offer::Idle | Offer::UpToDate | Offer::Failed => {
+                self.set_update(Offer::Checking);
+                thread::spawn(move || {
+                    let _ = proxy.send_event(UserEvent::Update(update::check()));
+                });
+            }
+        }
+    }
+
+    fn quit(&mut self, event_loop: &ActiveEventLoop) {
+        self.widget.hide();
+        let _ = self.tray.set_visible(false);
+        event_loop.exit();
     }
 }
 
@@ -124,11 +184,10 @@ impl ApplicationHandler<UserEvent> for App {
                     trayjuice::log!("autostart: set {wanted}, done={done}");
                 });
             }
-            UserEvent::Menu(e) if e.id.as_ref() == MENU_QUIT => {
-                self.widget.hide();
-                let _ = self.tray.set_visible(false);
-                event_loop.exit();
-            }
+            UserEvent::Menu(e) if e.id.as_ref() == MENU_UPDATE => self.update_clicked(),
+            UserEvent::Update(offer) => self.set_update(offer),
+            UserEvent::Menu(e) if e.id.as_ref() == MENU_QUIT => self.quit(event_loop),
+            UserEvent::QuitForUpdate => self.quit(event_loop),
             UserEvent::Menu(e) if e.id.as_ref() == MENU_REFRESH => {
                 let _ = self.refresh.send(());
             }
@@ -228,12 +287,14 @@ fn main() {
         trayjuice::autostart::is_enabled(),
         None,
     );
+    let update_item = MenuItem::with_id(MENU_UPDATE, Offer::Idle.label(), true, None);
     let menu = Menu::new();
     menu.append_items(&[
         &widget_item,
         &alerts_item,
         &autostart_item,
         &MenuItem::with_id(MENU_REFRESH, "Refresh now", true, None),
+        &update_item,
         &MenuItem::with_id(MENU_QUIT, "Quit TrayJuice", true, None),
     ])
     .expect("failed to build menu");
@@ -271,6 +332,9 @@ fn main() {
         alerts_item,
         low_battery: LowBattery::new(),
         notifier,
+        update_item,
+        update: Offer::Idle,
+        proxy: event_loop.create_proxy(),
         widget: Widget::new(),
         widget_item,
         autostart_item,

@@ -78,6 +78,11 @@ Use the `probe` example to debug device communication. Stop a running
 - `src/notify.rs`: shows the notification as a balloon on the app's own
   tray icon. It finds the icon number `tray-icon` registered by trying the
   first few; recheck it when that crate is updated.
+- `src/update.rs`: the "Check for updates" menu item, the only code that
+  uses the network (WinHTTP). See "Footprint and privacy".
+- `installer/trayjuice.iss` and `installer/build.ps1`: the Inno Setup
+  installer. CI compiles it on every push; the release workflow attaches
+  it next to the zip.
 - `src/autostart.rs`: the "Start with Windows" menu item, a value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - `src/probe.rs`: the device report behind the `probe` example and
@@ -179,11 +184,26 @@ Use the `probe` example to debug device communication. Stop a running
 
 ### Footprint and privacy
 
-- No network access, no telemetry, no update checks.
-- No administrator rights. Nothing is installed; settings, if added, live
-  under the app's own key in `HKCU` or in `%APPDATA%\TrayJuice`. The one
-  exception is the "Start with Windows" value in the user's `Run` key,
-  written only when the user ticks that menu item.
+- No telemetry and no network access by itself: no background update
+  checks, nothing at start, nothing on a timer. The one use of the network
+  is the "Check for updates" menu item, and only when the user clicks it.
+  It talks to `github.com` over HTTPS, sends nothing but the request, and
+  all of that code stays in `src/update.rs`, off the main thread.
+- The updater opens no address taken from a reply. The version is parsed
+  as digits and dots, and the download address is built from it in code.
+- Only a copy put in place by the installer is replaced by a newer
+  installer. Any other copy, and any failure, gets the release page opened
+  in the browser. The installer's file name
+  (`TrayJuice-<version>-setup.exe`) is what released versions download:
+  never rename it.
+- No administrator rights. The zip needs no installation. The installer
+  is optional and per-user: files under the user's profile, a Start menu
+  shortcut, and the `InstallDir` value under the app's key. Uninstalling
+  removes all of it, the saved settings and the `Run` value too.
+- Settings live under the app's own key in `HKCU` or in
+  `%APPDATA%\TrayJuice`. The one exception is the "Start with Windows"
+  value in the user's `Run` key, written only when the user ticks that
+  menu item.
 - Keep the app small: no GUI frameworks, webviews or async runtimes. Idle CPU
   use must stay negligible between polls: the only periodic work allowed is
   the widget's 400 ms tick (a few window queries).

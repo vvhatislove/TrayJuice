@@ -28,3 +28,16 @@ jobs:
 
       - name: Build
         run: cargo build --release
+
+      # Proves that the installer script still compiles. The file is kept
+      # for a few days so it can be tried by hand; releases build their own.
+      - name: Build the installer
+        shell: pwsh
+        run: installer\build.ps1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: dist/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7

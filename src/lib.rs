@@ -13,4 +13,5 @@ pub mod notify;
 pub mod probe;
 pub mod settings;
 pub mod taskbar;
+pub mod update;
 pub mod xbox;

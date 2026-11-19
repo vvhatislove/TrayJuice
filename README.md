@@ -11,10 +11,17 @@ about to die.
 
 ## Install
 
-Download the zip from the
-[latest release](https://github.com/vvhatislove/TrayJuice/releases/latest),
-unpack it anywhere and run `trayjuice.exe`. There is no installer. The
-executable is not signed, so Windows SmartScreen may ask for confirmation on
+From the [latest release](https://github.com/vvhatislove/TrayJuice/releases/latest)
+take one of:
+
+- `TrayJuice-<version>-setup.exe`, the installer. It needs no administrator
+  rights, puts the app under your user profile with a Start menu shortcut,
+  and can be removed from Windows Settings. A copy installed this way can
+  update itself from the tray menu.
+- `TrayJuice-<version>-windows-x64.zip`: unpack it anywhere and run
+  `trayjuice.exe`. Nothing is installed.
+
+Neither file is signed, so Windows SmartScreen may ask for confirmation on
 the first start.
 
 Or with [Scoop](https://scoop.sh):
@@ -45,6 +52,11 @@ hover. Right-click it for:
 - **Start with Windows**: start TrayJuice when you sign in. It adds one
   value to the current user's `Run` registry key and removes it when
   unticked.
+- **Check for updates**: asks GitHub whether a newer release exists and
+  shows the answer in the menu item itself. If there is one, a second click
+  downloads its installer and runs it; for a copy from the zip or a
+  package manager it opens the release page instead. This click is the
+  only time TrayJuice uses the network.
 - **Refresh now** and **Quit TrayJuice**.
 
 The first two choices are remembered in the registry under
@@ -62,6 +74,10 @@ disappears or reports a change by itself.
 - With many open apps the widget can be drawn over taskbar buttons next to
   the notification area. The buttons stay clickable.
 - Only one copy runs per user session; a second start exits at once.
+- Updating from the tray menu was only tried as far as the check itself.
+  Downloading and running a newer installer cannot be tried before a
+  release that has one exists. The download is protected by HTTPS only:
+  the installer is not signed.
 - Other display scales, the light theme, vertical or secondary taskbars and
   Windows 10 are untested. On Windows 10 the glyphs come from Segoe MDL2
   Assets, because Segoe Fluent Icons does not exist there.
@@ -184,8 +200,10 @@ the icon appears.
 1. Set the version in `Cargo.toml`, commit and push.
 2. Push a tag of the same version, for example `v0.2.0`.
 3. The `Release` workflow tests, builds and packs
-   `TrayJuice-<version>-windows-x64.zip` and attaches it to the GitHub
-   release of that tag, creating a draft release if there is none yet.
+   `TrayJuice-<version>-windows-x64.zip` and the installer
+   `TrayJuice-<version>-setup.exe`, and attaches both to the GitHub release
+   of that tag, creating a draft release if there is none yet. Keep both
+   file names: package managers and "Check for updates" rely on them.
 4. Publish the draft. The [Scoop bucket](https://github.com/vvhatislove/scoop-bucket)
    picks the new version up by itself within a few hours.
 
